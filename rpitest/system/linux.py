@@ -5,9 +5,11 @@ waarden van de tester geen commando's kunnen injecteren."""
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import subprocess
+import sys
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -108,6 +110,7 @@ class LinuxOps(SystemOps):
         self._root = root
         self._iperf_server: subprocess.Popen | None = None
         self._bt_proc: subprocess.Popen | None = None
+        self._stress: dict | None = None
 
     # --- hulpfuncties ---
     def _run(self, argv: list[str], timeout: float = 30, check: bool = True) -> ShellResult:
@@ -312,3 +315,83 @@ class LinuxOps(SystemOps):
         if result.returncode != 0:
             raise OpsError(f"dmesg faalde ({result.returncode}): {result.stderr.strip()[:200]}")
         return parsers.parse_usb_events(result.stdout)
+
+    # --- voeding, temperatuur en belasting ---
+    def power_sample(self) -> dict:
+        millideg = _read_int(self._root / "sys/class/thermal/thermal_zone0/temp")
+        cpufreq = self._root / "sys/devices/system/cpu/cpu0/cpufreq"
+        freq_khz = _read_int(cpufreq / "scaling_cur_freq")
+        max_khz = _read_int(cpufreq / "cpuinfo_max_freq")
+        throttled = parsers.parse_throttled(self._run(["vcgencmd", "get_throttled"], check=False).stdout)
+        volts = parsers.parse_pmic_adc(self._run(["vcgencmd", "pmic_read_adc"], check=False).stdout)
+        online = _read(self._root / "sys/devices/system/cpu/online")
+        present = _read(self._root / "sys/devices/system/cpu/present")
+        return {
+            "temp_c": millideg / 1000 if millideg is not None else None,
+            "freq_mhz": freq_khz / 1000 if freq_khz else None,
+            "freq_max_mhz": max_khz / 1000 if max_khz else None,
+            "throttled": throttled,
+            "volts": {k: v for k, v in volts.items() if k.endswith("_V")},
+            "cores_online": parsers.parse_cpu_list(online) if online else None,
+            "cores_present": parsers.parse_cpu_list(present) if present else None,
+        }
+
+    def _mem_available_mb(self) -> int:
+        for line in (_read(self._root / "proc/meminfo") or "").splitlines():
+            if line.startswith("MemAvailable:"):
+                return int(line.split()[1]) // 1024
+        return 0
+
+    def stress_start(self, seconds: int, ram_mb: int) -> None:
+        self.stress_stop()
+        ram = min(ram_mb, self._mem_available_mb() // 2)
+        base = [sys.executable, "-m", "rpitest.system.stress"]
+        workers = [("cpu", [*base, "cpu", "--seconds", str(seconds)]) for _ in range(os.cpu_count() or 1)]
+        if ram >= 16:
+            workers.append(("ram", [*base, "ram", "--seconds", str(seconds), "--mb", str(ram)]))
+        self._stress = {
+            "started": time.monotonic(),
+            "procs": [(role, subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
+                      for role, argv in workers],
+        }
+
+    def stress_poll(self) -> dict:
+        if self._stress is None:
+            return {"running": False, "elapsed": 0.0}
+        running = any(proc.poll() is None for _, proc in self._stress["procs"])
+        return {"running": running, "elapsed": round(time.monotonic() - self._stress["started"], 1)}
+
+    def stress_result(self) -> dict:
+        if self._stress is None:
+            raise OpsError("er is geen belastingstest gestart")
+        if self.stress_poll()["running"]:
+            raise OpsError("belastingstest loopt nog")
+        cpu, ram, errors = [], None, []
+        for role, proc in self._stress["procs"]:
+            out, err = proc.communicate()
+            try:
+                data = json.loads(out.strip().splitlines()[-1])
+            except (ValueError, IndexError):
+                errors.append(f"{role}-worker gaf geen resultaat (exit {proc.returncode}): {err.strip()[-200:]}")
+                continue
+            if role == "cpu":
+                cpu.append(data)
+            else:
+                ram = data
+        self._stress = None
+        return {"cpu": cpu, "ram": ram, "errors": errors}
+
+    def stress_stop(self) -> None:
+        stress, self._stress = self._stress, None
+        for _, proc in (stress or {}).get("procs", []):
+            if proc.poll() is None:
+                proc.kill()
+            proc.communicate()
+
+    def close(self) -> None:
+        """Ruim alles op wat deze instantie gestart heeft (aanroepen bij afsluiten)."""
+        for step in (self.stress_stop, self.iperf3_server_stop, lambda: self.bt_discoverable(False)):
+            try:
+                step()
+            except Exception:
+                pass

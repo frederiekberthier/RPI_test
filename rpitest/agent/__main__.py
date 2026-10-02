@@ -31,7 +31,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Fout: {exc}", file=sys.stderr)
         return 2
 
-    server = make_server(Agent(port, pi_info, LinuxOps()), args.host, args.port)
+    ops = LinuxOps()
+    server = make_server(Agent(port, pi_info, ops), args.host, args.port)
     print(f"Agent luistert op {args.host}:{args.port} (GPIO-chip {port.chip_path})")
     try:
         server.serve_forever()
@@ -39,6 +40,7 @@ def main(argv: list[str] | None = None) -> int:
         pass
     finally:
         server.server_close()
+        ops.close()
         port.close()
     return 0
 

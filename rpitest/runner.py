@@ -3,7 +3,7 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Callable
 
-from .checks import bluetooth, gpio, network, system, usb, wifi
+from .checks import bluetooth, gpio, network, power, system, usb, wifi
 from .context import Context
 from .models import CheckResult, Report, Status
 
@@ -16,6 +16,7 @@ CHECK_GROUPS: dict[str, Check] = {
     "network": network.run,
     "wifi": wifi.run,
     "bluetooth": bluetooth.run,
+    "power": power.run,  # laatst: meldt ook onderspanning die tijdens de eerdere tests optrad
 }
 
 

@@ -89,3 +89,24 @@ class SystemOps(ABC):
     @abstractmethod
     def usb_kernel_events(self) -> list[dict]:
         """USB-problemen uit het kernellogboek: [{'ts','category','text'}]"""
+
+    # --- voeding, temperatuur en belasting ---
+    @abstractmethod
+    def power_sample(self) -> dict:
+        """{'temp_c','freq_mhz','freq_max_mhz','throttled' (bitmasker of None),'volts':{...},
+        'cores_online','cores_present'}; ontbrekende metingen zijn None."""
+
+    @abstractmethod
+    def stress_start(self, seconds: int, ram_mb: int) -> None:
+        """Start CPU- en RAM-belasting op de achtergrond."""
+
+    @abstractmethod
+    def stress_poll(self) -> dict:
+        """{'running': bool, 'elapsed': seconden}"""
+
+    @abstractmethod
+    def stress_result(self) -> dict:
+        """{'cpu': [{'rounds','bad'}, ...], 'ram': {'passes','bad','mb'} of None, 'errors': [...]}"""
+
+    @abstractmethod
+    def stress_stop(self) -> None: ...

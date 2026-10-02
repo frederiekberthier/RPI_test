@@ -172,6 +172,31 @@ velden (`label`, `name`, `min_speed_mbit`, `min_read_mb_s`).
 **Beperkingen:** stroomverbruik per poort wordt niet gemeten. Overstroom blijkt alleen uit het kernellogboek.
 De poort van de USB-C-voeding wordt niet getest.
 
+## Voeding en temperatuur
+
+De DUT draait ca. een minuut met alle kernen op een rekentaak en een geheugentest. Intussen leest
+de tester elke 2 seconden temperatuur, klokfrequentie en de `throttled`-vlaggen van de firmware uit.
+Dit komt als laatste in de run, zodat onderspanning uit de eerdere tests ook in de historie zit.
+
+| Check | Wat gebeurt er | Uitkomst |
+|---|---|---|
+| `power.sensors` | temperatuur, frequentie en `vcgencmd get_throttled` leesbaar | FAIL zonder temperatuur of frequentie; WARN zonder `get_throttled` |
+| `power.supply` | onderspanning tijdens de belasting; op de Pi 5 ook de gemeten ingangsspanning (`vcgencmd pmic_read_adc`) | FAIL bij onderspanning nu; WARN bij een spanning onder 4,75 V of onderspanning alleen sinds het opstarten |
+| `power.thermal` | rusttemperatuur, piek en laagste klokfrequentie | FAIL vanaf 85 °C; WARN bij throttling, vanaf 80 °C of al 60 °C in rust |
+| `power.cpu` | alle kernen actief (4) en een vaste SHA-256-keten geeft overal hetzelfde resultaat | FAIL bij een ontbrekende kern of verkeerde uitkomsten; WARN bij een veel tragere kern |
+| `power.memory` | 256 MB (max. de helft van het vrije geheugen) met vaste en adresafhankelijke patronen | FAIL bij fout teruggelezen blokken |
+
+Aandachtspunten:
+- **De voeding van de DUT telt mee.** Gebruik een goede voeding (Pi 4: 5,1 V / 3 A; Pi 5: 5 V / 5 A of de
+  officiële 27 W) en bevestig met de zelftest op een bekend goede Pi dat die geen onderspanning geeft.
+  Een DUT met een slechte stroomingang valt dan door zijn eigen spanning af.
+- **Koeling is bepalend voor de temperatuur.** Een Pi zonder koelblok throttlet snel; dat is geen defect,
+  en daarom geeft throttling een WARN en geen FAIL. Laat een ventilator over de DUT blazen, zodat de
+  metingen vergelijkbaar blijven.
+- De geheugentest is een korte controle in Python, geen vervanger van `memtester`. Zeldzame geheugenfouten
+  vind je er niet mee.
+- Duur en drempels staan in `rpitest/config.py` (`STRESS_SECONDS`, `TEMP_*`, `MIN_5V_VOLT`).
+
 ## Eerste keer: wat nog bevestigd moet worden
 
 Dit is geschreven zonder echte hardware. Controleer bij de eerste run:
@@ -192,4 +217,8 @@ Dit is geschreven zonder echte hardware. Controleer bij de eerste run:
    - dat de leesdrempels (60 en 15 MB/s) bij jouw sticks haalbaar zijn. Pas ze aan op basis van de gemeten waarden in het rapport van een bekend goede Pi.
 
    De opslagtest gebruikt `O_DIRECT` op het blokapparaat, en alleen op een gewoon bestand zonder `O_DIRECT` is hij getest. Meld het als dat op de echte stick een foutmelding geeft.
-8. **Pull-up/-down testen** (`gpio.pulls`): zwevende lijnen kunnen op echte hardware afwijken van de simulatie. Slagen alle pinnen, dan is dat goed. Zo niet, noteer dan welke.
+8. **Voeding en temperatuur.** Controleer dat `vcgencmd get_throttled` en `vcgencmd pmic_read_adc` werken
+   (pakket `libraspberrypi-bin`), en of de regel `EXT5V_V` in het formaat staat dat de parser verwacht. Zo niet, dan
+   ontbreekt de spanningsmeting stil en blijft het bij de `throttled`-vlag. De drempels voor temperatuur en
+   frequentie zijn schattingen; kijk wat een bekend goede Pi in jouw opstelling haalt.
+9. **Pull-up/-down testen** (`gpio.pulls`): zwevende lijnen kunnen op echte hardware afwijken van de simulatie. Slagen alle pinnen, dan is dat goed. Zo niet, noteer dan welke.

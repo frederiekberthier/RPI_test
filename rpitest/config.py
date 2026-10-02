@@ -43,3 +43,15 @@ USB_SLOTS = (
     {"label": "SLOT3", "name": "USB2 poort 1", "min_speed_mbit": 480, "min_read_mb_s": 15},
     {"label": "SLOT4", "name": "USB2 poort 2", "min_speed_mbit": 480, "min_read_mb_s": 15},
 )
+
+# --- voeding, temperatuur en belasting ---
+STRESS_SECONDS = 60
+STRESS_POLL_S = 2
+STRESS_RAM_MB = 256  # wordt begrensd tot de helft van het beschikbare geheugen
+EXPECTED_CORES = 4  # Pi 4 en Pi 5
+TEMP_IDLE_WARN_C = 60  # in rust (na het opstarten) al zo warm: WARN
+TEMP_WARN_C = 80  # hier begint de Pi te throttlen: WARN
+TEMP_FAIL_C = 85
+MIN_5V_VOLT = 4.75  # gemeten ingangsspanning (Pi 5) onder belasting: WARN
+THROTTLE_FREQ_RATIO = 0.9  # klokfrequentie onder 90% van het maximum tijdens de belasting: WARN
+SLOW_CORE_RATIO = 0.5  # een kern die minder dan de helft van de mediaan haalt: WARN

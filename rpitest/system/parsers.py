@@ -181,3 +181,40 @@ def parse_usb_events(dmesg_text: str) -> list[dict]:
                 events.append({"ts": ts, "category": category, "text": text})
                 break
     return events
+
+
+# Bits van `vcgencmd get_throttled` (documentatie van Raspberry Pi)
+THROTTLED_BITS = {
+    0: "undervoltage_now", 1: "freq_capped_now", 2: "throttled_now", 3: "soft_temp_limit_now",
+    16: "undervoltage_occurred", 17: "freq_capped_occurred", 18: "throttled_occurred",
+    19: "soft_temp_limit_occurred",
+}
+
+
+def parse_throttled(text: str) -> int | None:
+    """'throttled=0x50005' -> 0x50005"""
+    m = re.search(r"throttled=(0x[0-9a-fA-F]+)", text)
+    return int(m[1], 16) if m else None
+
+
+def decode_throttled(value: int | None) -> dict[str, bool]:
+    return {name: bool(value and value & (1 << bit)) for bit, name in THROTTLED_BITS.items()}
+
+
+def parse_pmic_adc(text: str) -> dict[str, float]:
+    """`vcgencmd pmic_read_adc` (Pi 5): regels als 'EXT5V_V volt(24)=4.94V' -> {'EXT5V_V': 4.94}."""
+    values = {}
+    for m in re.finditer(r"^\s*(\w+)\s+(?:volt|current)\(\d+\)=([\d.]+)[AV]", text, re.M):
+        values[m[1]] = float(m[2])
+    return values
+
+
+def parse_cpu_list(text: str) -> int:
+    """Aantal cpu's in een lijst als '0-3' of '0,2-3'."""
+    total = 0
+    for part in text.strip().split(","):
+        if not part:
+            continue
+        low, _, high = part.partition("-")
+        total += int(high or low) - int(low) + 1
+    return total

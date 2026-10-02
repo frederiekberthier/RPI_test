@@ -16,6 +16,10 @@ Fouten (via --fault op de opdrachtregel):
                  datafouten / traag
   usb_no_sticks  geen enkele teststick aanwezig (fixture niet aangesloten)
   usb_overcurrent / usb_disconnect   kernelmeldingen tijdens de test
+  power_undervolt / power_undervolt_history   onderspanning nu / alleen sinds opstarten
+  power_hot / power_warm / power_throttle     85+ graden / 80+ graden / klokfrequentie gedrukt
+  power_cpu_error / power_ram_error / power_core_missing   rekenfouten / geheugenfouten / een kern minder
+  power_no_sensor   temperatuursensor niet leesbaar
 """
 
 from __future__ import annotations
@@ -25,7 +29,9 @@ from .ops import OpsError, SystemOps
 
 TESTER, DUT = "T", "D"
 USB_SLOT_FAULTS = {f"usb_slot{n}_{kind}" for n in range(1, 5) for kind in ("dead", "usb2", "corrupt", "slow")}
-KNOWN_FAULTS = frozenset(USB_SLOT_FAULTS | {"usb_no_sticks", "usb_overcurrent", "usb_disconnect"} | {
+POWER_FAULTS = {"power_undervolt", "power_undervolt_history", "power_hot", "power_warm", "power_throttle",
+                "power_cpu_error", "power_ram_error", "power_core_missing", "power_no_sensor"}
+KNOWN_FAULTS = frozenset(USB_SLOT_FAULTS | POWER_FAULTS | {"usb_no_sticks", "usb_overcurrent", "usb_disconnect"} | {
     "eth_100", "eth_errors", "eth_slow", "eth_loss", "no_wifi", "wifi_5g_dead", "wifi_weak",
     "no_bt", "bt_dut_rx_dead", "bt_dut_tx_dead", "tester_no_wifi", "tester_no_bt",
 })
@@ -43,6 +49,8 @@ class MockEnv:
         self.dut_connected = False
         self.discoverable = {TESTER: False, DUT: False}
         self.dut_errors = 0
+        self.stress_polls_left = 0
+        self.stress_polls_done = 0
 
     def ops(self, side: str) -> MockOps:
         return MockOps(self, side)
@@ -176,3 +184,51 @@ class MockOps(SystemOps):
         if self._fault("usb_disconnect"):
             events.append({"ts": 130.0, "category": "disconnect", "text": "usb 1-1.3: USB disconnect, device number 4"})
         return events
+
+    # --- voeding, temperatuur en belasting ---
+    STRESS_POLLS = 4  # hoeveel keer stress_poll 'nog bezig' meldt
+
+    def power_sample(self) -> dict:
+        env = self._env
+        loaded = env.stress_polls_done > 0
+        temp = 42.0 + (12.0 * min(env.stress_polls_done, 3) / 3 if loaded else 0.0)
+        if loaded and self._fault("power_hot"):
+            temp = 87.0
+        elif loaded and self._fault("power_warm"):
+            temp = 81.0
+        throttled = 0
+        if self._fault("power_undervolt_history"):
+            throttled |= 1 << 16
+        if loaded and self._fault("power_undervolt"):
+            throttled |= (1 << 0) | (1 << 16)
+        throttle = loaded and (self._fault("power_throttle") or self._fault("power_hot"))
+        if throttle:
+            throttled |= (1 << 3) | (1 << 19)
+        volts = {"EXT5V_V": 4.6 if loaded and self._fault("power_undervolt") else 4.95}
+        return {
+            "temp_c": None if self._fault("power_no_sensor") else temp,
+            "freq_mhz": 1200.0 if throttle else 2400.0, "freq_max_mhz": 2400.0,
+            "throttled": throttled, "volts": volts,
+            "cores_online": 3 if self._fault("power_core_missing") else 4, "cores_present": 4,
+        }
+
+    def stress_start(self, seconds: int, ram_mb: int) -> None:
+        self._env.stress_polls_left = self.STRESS_POLLS
+        self._env.stress_polls_done = 0
+
+    def stress_poll(self) -> dict:
+        env = self._env
+        running = env.stress_polls_left > 0
+        if running:
+            env.stress_polls_left -= 1
+            env.stress_polls_done += 1
+        return {"running": running, "elapsed": float(env.stress_polls_done * 2)}
+
+    def stress_result(self) -> dict:
+        bad_cpu = 2 if self._fault("power_cpu_error") else 0
+        cpu = [{"role": "cpu", "rounds": 120, "bad": bad_cpu if i == 0 else 0} for i in range(4)]
+        ram = {"role": "ram", "passes": 3, "bad": 5 if self._fault("power_ram_error") else 0, "mb": 256}
+        return {"cpu": cpu, "ram": ram, "errors": []}
+
+    def stress_stop(self) -> None:
+        self._env.stress_polls_left = 0

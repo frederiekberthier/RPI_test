@@ -18,7 +18,9 @@ python -m rpitest --mock --fault eth_100 --fault wifi_5g_dead --fault bt_dut_tx_
 Faalspecificaties: `stuck_low|stuck_high:<T|D>:<pin>`, `bridge:<T|D>:<a>:<b>`, `open:<pin>`.
 Systeemfouten: `eth_100`, `eth_errors`, `eth_slow`, `eth_loss`, `no_wifi`, `wifi_5g_dead`, `wifi_weak`,
 `no_bt`, `bt_dut_rx_dead`, `bt_dut_tx_dead`, `tester_no_wifi`, `tester_no_bt`,
-`usb_slotN_dead|usb2|corrupt|slow` (N = 1..4), `usb_no_sticks`, `usb_overcurrent`, `usb_disconnect`.
+`usb_slotN_dead|usb2|corrupt|slow` (N = 1..4), `usb_no_sticks`, `usb_overcurrent`, `usb_disconnect`,
+`power_undervolt`, `power_undervolt_history`, `power_hot`, `power_warm`, `power_throttle`, `power_cpu_error`,
+`power_ram_error`, `power_core_missing`, `power_no_sensor`.
 
 ## Op echte hardware
 Zie [docs/opstelling.md](docs/opstelling.md): onderdelen, bedrading van het breadboard,
@@ -28,5 +30,5 @@ bevestigd moet worden.
 ## Stand van zaken
 Klaar: skelet, agent (JSON-RPC over HTTP), mock met foutinjectie, GPIO-checks, JSON/HTML-rapport,
 echte GPIO-backend (libgpiod 2.x, enkel getest met een nep-`gpiod`), bedradingshandleiding,
-netwerk-, wifi-, bluetooth- en USB-checks (alleen getest met simulatie en nagebootste tooluitvoer).
-Nog te doen: alles op echte Pi's bevestigen, voeding/temperatuur, tester-image, scherm/kiosk.
+netwerk-, wifi-, bluetooth-, USB- en voeding/temperatuurchecks (alleen getest met simulatie en nagebootste tooluitvoer).
+Nog te doen: alles op echte Pi's bevestigen, tester-image, scherm/kiosk.

@@ -68,6 +68,11 @@ class Agent:
             "usb_storage_test": self.usb_storage_test,
             "usb_uptime": self.usb_uptime,
             "usb_kernel_events": self.usb_kernel_events,
+            "power_sample": self.power_sample,
+            "stress_start": self.stress_start,
+            "stress_poll": self.stress_poll,
+            "stress_result": self.stress_result,
+            "stress_stop": self.stress_stop,
         }
 
     def dispatch(self, method: str, params: dict):
@@ -160,3 +165,19 @@ class Agent:
 
     def usb_kernel_events(self) -> list[dict]:
         return self.ops.usb_kernel_events()
+
+    # --- voeding, temperatuur en belasting ---
+    def power_sample(self) -> dict:
+        return self.ops.power_sample()
+
+    def stress_start(self, seconds: int, ram_mb: int) -> None:
+        self.ops.stress_start(_int_between(seconds, 5, 300, "seconds"), _int_between(ram_mb, 16, 2048, "ram_mb"))
+
+    def stress_poll(self) -> dict:
+        return self.ops.stress_poll()
+
+    def stress_result(self) -> dict:
+        return self.ops.stress_result()
+
+    def stress_stop(self) -> None:
+        self.ops.stress_stop()

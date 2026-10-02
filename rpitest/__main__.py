@@ -77,6 +77,7 @@ def main(argv: list[str] | None = None) -> int:
         report = run_all(ctx)
     finally:
         if port is not None:
+            ctx.tester_ops.close()  # stopt hotspot-resten, iperf3, zichtbaarheid
             port.close()
     for r in report.results:
         print(f"[{r.status.value:4}] {r.name}: {r.summary}")
