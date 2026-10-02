@@ -83,7 +83,7 @@ Op de DUT-image hetzelfde met `192.168.77.2/24`. De adressen staan in `rpitest/c
 Basis: **Raspberry Pi OS Lite (Trixie, 64-bit)**, voor beide Pi's. Bookworm werkt niet, want die levert libgpiod 1.x.
 
 ```
-sudo apt install python3-libgpiod git
+sudo apt install python3-libgpiod git iperf3 iw rfkill bluez network-manager
 git clone https://github.com/frederiekberthier/RPI_test.git && cd RPI_test
 python3 -m venv --system-site-packages .venv && . .venv/bin/activate
 pip install -e .
@@ -91,17 +91,46 @@ pip install -e .
 
 Zorg dat I2C, SPI en de seriële poort uit staan, anders houden ze pinnen bezet (bv. `sudo raspi-config nonint do_i2c 1`, `do_spi 1`, `do_serial_hw 1`, `do_serial_cons 1`, daarna herstarten).
 
+Wifi- en bluetoothopdrachten (`nmcli`, `bluetoothctl`) vragen meer rechten dan GPIO. Start daarom
+zowel de agent als de test met `sudo` (bv. `sudo .venv/bin/python -m rpitest`).
+
 **Op de DUT:**
 ```
-python -m rpitest.agent --list-chips     # welke gpiochips zijn er?
-python -m rpitest.agent                  # start de agent op 192.168.77.2:8765
+sudo .venv/bin/python -m rpitest.agent --list-chips   # welke gpiochips zijn er?
+sudo .venv/bin/python -m rpitest.agent                # start de agent op 192.168.77.2:8765
 ```
 
 **Op de testpi:**
 ```
-python -m rpitest.agent --list-chips
-python -m rpitest                        # voert de volledige test uit en maakt het rapport
+sudo .venv/bin/python -m rpitest.agent --list-chips
+sudo .venv/bin/python -m rpitest                      # voert de volledige test uit en maakt het rapport
 ```
+
+## Netwerk, wifi en bluetooth
+
+| Check | Wat gebeurt er | Wat vraagt het |
+|---|---|---|
+| `net.link` | linksnelheid en duplex van de DUT-ethernetpoort (verwacht 1000 Mb/s) | gigabitpoort op de testpi, goede kabel |
+| `net.latency` | 20 pings in beide richtingen: geen verlies, gem. RTT onder 2 ms | |
+| `net.throughput` | `iperf3` 5 s in beide richtingen: PASS vanaf 800 Mb/s, WARN vanaf 500 | `iperf3` op beide Pi's |
+| `net.errors` | rx/tx/CRC-fouten die tijdens de test bijkomen | |
+| `wifi.radio` | DUT heeft een wifi-interface en geen hardware-rfkill | |
+| `wifi.2.4GHz`, `wifi.5GHz` | testpi start een accesspoint (NetworkManager-hotspot, kanaal 6 en 36); de DUT scant, verbindt, krijgt een IP, pingt beide richtingen; signaalsterkte | wifi op de testpi, wifi-land ingesteld op beide Pi's |
+| `bt.controller` | DUT heeft een ingeschakelde bluetooth-controller | |
+| `bt.receive` | testpi is zichtbaar, DUT moet hem zien | `bluez` op beide Pi's |
+| `bt.transmit` | DUT is zichtbaar, testpi moet hem zien | |
+
+Aandachtspunten:
+- **Wifi-land instellen** op beide Pi's (`sudo raspi-config nonint do_wifi_country BE`). Zonder land
+  kan het accesspoint op 5 GHz niet starten.
+- **De testpi gebruikt zijn wifi als accesspoint**, en zijn ethernetpoort voor de DUT. Beheer van
+  de testpi gebeurt dus met toetsenbord en scherm, of met een extra USB-ethernetadapter.
+- **Wifi en bluetooth** delen op de Pi dezelfde chip. De bluetooth-test draait daarom na de wifi-test.
+- Het wifi-netwerk `RPITEST` en het wachtwoord staan in `rpitest/config.py`. Het is een wegwerpnetwerk
+  dat alleen tijdens de test bestaat; het wachtwoord is geen geheim.
+- Als de testpi geen wifi of bluetooth heeft, staan die checks op **SKIP** en wordt het eindoordeel
+  **INCOMPLETE**, niet PASS.
+- Alle drempelwaarden staan in `rpitest/config.py`. Het zijn eerste schattingen; stel ze bij met een bekend goede Pi.
 
 ## Eerste keer: wat nog bevestigd moet worden
 
@@ -110,4 +139,11 @@ Dit is geschreven zonder echte hardware. Controleer bij de eerste run:
 1. **Chiplabels.** `--list-chips` moet op de Pi 5 een chip met label `pinctrl-rp1` (54 lijnen) tonen, en op de Pi 4 `pinctrl-bcm2711`. Wijkt het af, pas dan `HEADER_CHIP_LABELS` in `rpitest/gpio/real.py` aan.
 2. **Zelftest met een bekend goede DUT.** Laat de test eerst draaien met een Pi waarvan je weet dat hij werkt. Een fout dan wijst op de bedrading of de testpi. Los die eerst op, voor je de eerste echte student-Pi test.
 3. **GPIO2 en GPIO3.** Beide kanten hebben een vaste pull-up van 1,8 kΩ. Een lage stand komt via 220 Ω tegen één van die pull-ups uit, wat ongeveer 0,4 V geeft. Dat hoort ruim onder de drempel te liggen; controleer dat deze twee pinnen slagen.
-4. **Pull-up/-down testen** (`gpio.pulls`): zwevende lijnen kunnen op echte hardware afwijken van de simulatie. Slagen alle pinnen, dan is dat goed. Zo niet, noteer dan welke.
+4. **Uitvoerformaten van de tools.** De parsers voor `ping`, `iperf3`, `nmcli`, `iw` en `bluetoothctl`
+   zijn geschreven op basis van het formaat dat ik me herinner. Het rapport bewaart de ruwe gegevens
+   per check in de JSON; controleer ze bij de eerste run. Zijn ze anders, stuur me dan de uitvoer, dan
+   pas ik de parsers en de voorbeelden in `tests/test_parsers.py` aan.
+5. **Bluetooth zichtbaar maken.** De testpi blijft zichtbaar zolang een `bluetoothctl`-sessie openstaat.
+   Dat werkt volgens mijn kennis, maar is niet getest.
+6. **Hotspot op 5 GHz.** Controleer dat `nmcli dev wifi hotspot ... band a channel 36` op de testpi werkt.
+7. **Pull-up/-down testen** (`gpio.pulls`): zwevende lijnen kunnen op echte hardware afwijken van de simulatie. Slagen alle pinnen, dan is dat goed. Zo niet, noteer dan welke.

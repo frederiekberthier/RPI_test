@@ -1,17 +1,49 @@
 from __future__ import annotations
 
+import ipaddress
+import re
 import threading
 from collections.abc import Callable
 
 from ..gpio.ports import GpioPort
+from ..system.ops import OpsError, SystemOps
+
+_MAC = re.compile(r"^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
+
+
+def _ipv4(host) -> str:
+    try:
+        return str(ipaddress.IPv4Address(host))
+    except ValueError as exc:
+        raise ValueError(f"geen geldig IPv4-adres: {host!r}") from exc
+
+
+def _int_between(value, low: int, high: int, name: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or not low <= value <= high:
+        raise ValueError(f"{name} moet een geheel getal tussen {low} en {high} zijn")
+    return value
+
+
+def _ssid(value) -> str:
+    if not isinstance(value, str) or not 1 <= len(value.encode()) <= 32 or not value.isprintable():
+        raise ValueError("ongeldige SSID")
+    return value
+
+
+def _password(value) -> str:
+    if not isinstance(value, str) or not 8 <= len(value) <= 63 or not value.isascii() or not value.isprintable():
+        raise ValueError("ongeldig wachtwoord (8 tot 63 afdrukbare ASCII-tekens)")
+    return value
 
 
 class Agent:
-    """Draait op de DUT. Voert opdrachten van de tester uit via een vaste lijst methodes."""
+    """Draait op de DUT. Voert opdrachten van de tester uit via een vaste lijst methodes met
+    gevalideerde parameters; er is bewust geen manier om willekeurige commando's uit te voeren."""
 
-    def __init__(self, gpio: GpioPort, info_fn: Callable[[], dict]):
+    def __init__(self, gpio: GpioPort, info_fn: Callable[[], dict], ops: SystemOps | None = None):
         self._gpio = gpio
         self._info_fn = info_fn
+        self._ops = ops
         self._lock = threading.Lock()
         self._methods = {
             "ping": self.ping,
@@ -19,6 +51,18 @@ class Agent:
             "gpio_set_input": self.gpio_set_input,
             "gpio_drive": self.gpio_drive,
             "gpio_read": self.gpio_read,
+            "net_iface_info": self.net_iface_info,
+            "net_ping": self.net_ping,
+            "iperf3_server_start": self.iperf3_server_start,
+            "iperf3_server_stop": self.iperf3_server_stop,
+            "wifi_info": self.wifi_info,
+            "wifi_scan": self.wifi_scan,
+            "wifi_connect": self.wifi_connect,
+            "wifi_link": self.wifi_link,
+            "wifi_forget": self.wifi_forget,
+            "bt_info": self.bt_info,
+            "bt_scan": self.bt_scan,
+            "bt_discoverable": self.bt_discoverable,
         }
 
     def dispatch(self, method: str, params: dict):
@@ -26,7 +70,16 @@ class Agent:
         if fn is None:
             raise KeyError(f"onbekende methode: {method}")
         with self._lock:
-            return fn(**params)
+            try:
+                return fn(**params)
+            except OpsError as exc:  # laat de tester het verschil zien tussen "faalt" en "kan niet"
+                raise RuntimeError(f"OpsError: {exc}") from exc
+
+    @property
+    def ops(self) -> SystemOps:
+        if self._ops is None:
+            raise RuntimeError("deze agent heeft geen systeem-backend")
+        return self._ops
 
     def ping(self) -> str:
         return "pong"
@@ -34,6 +87,7 @@ class Agent:
     def info(self) -> dict:
         return self._info_fn()
 
+    # --- GPIO ---
     def gpio_set_input(self, pins: list[int], pull: str) -> None:
         self._gpio.set_input(pins, pull)
 
@@ -43,3 +97,46 @@ class Agent:
     def gpio_read(self, pins: list[int]) -> dict[str, int]:
         # JSON kent alleen string-sleutels
         return {str(p): v for p, v in self._gpio.read(pins).items()}
+
+    # --- wired netwerk ---
+    def net_iface_info(self) -> dict:
+        return self.ops.net_iface_info()
+
+    def net_ping(self, host: str, count: int) -> dict:
+        return self.ops.ping(_ipv4(host), _int_between(count, 1, 100, "count"))
+
+    def iperf3_server_start(self) -> None:
+        self.ops.iperf3_server_start()
+
+    def iperf3_server_stop(self) -> None:
+        self.ops.iperf3_server_stop()
+
+    # --- wifi ---
+    def wifi_info(self) -> dict:
+        return self.ops.wifi_info()
+
+    def wifi_scan(self) -> list[dict]:
+        return self.ops.wifi_scan()
+
+    def wifi_connect(self, ssid: str, password: str) -> dict:
+        return self.ops.wifi_connect(_ssid(ssid), _password(password))
+
+    def wifi_link(self) -> dict:
+        return self.ops.wifi_link()
+
+    def wifi_forget(self) -> None:
+        self.ops.wifi_forget()
+
+    # --- bluetooth ---
+    def bt_info(self) -> dict:
+        return self.ops.bt_info()
+
+    def bt_scan(self, seconds: int, forget_mac: str | None = None) -> list[dict]:
+        if forget_mac is not None and not _MAC.match(forget_mac):
+            raise ValueError("ongeldig MAC-adres")
+        return self.ops.bt_scan(_int_between(seconds, 1, 60, "seconds"), forget_mac)
+
+    def bt_discoverable(self, enabled: bool) -> None:
+        if not isinstance(enabled, bool):
+            raise ValueError("enabled moet true of false zijn")
+        self.ops.bt_discoverable(enabled)

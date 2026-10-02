@@ -20,14 +20,15 @@ class RpcClient:
         # geen systeemproxy: het verkeer loopt over een rechtstreekse kabel
         self._opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
-    def call(self, method: str, **params):
+    def call(self, method: str, _timeout: float | None = None, **params):
+        """_timeout: seconden voor trage opdrachten (scan, iperf3, ...)."""
         request = urllib.request.Request(
             self._url,
             data=json.dumps({"method": method, "params": params}).encode(),
             headers={"Content-Type": "application/json"},
         )
         try:
-            with self._opener.open(request, timeout=self._timeout) as response:
+            with self._opener.open(request, timeout=_timeout or self._timeout) as response:
                 body = json.load(response)
         except (urllib.error.URLError, OSError, ValueError) as exc:
             raise RpcError(f"DUT niet bereikbaar: {exc}") from exc
@@ -42,7 +43,7 @@ class LocalClient:
     def __init__(self, agent: Agent):
         self._agent = agent
 
-    def call(self, method: str, **params):
+    def call(self, method: str, _timeout: float | None = None, **params):
         try:
             return self._agent.dispatch(method, params)
         except Exception as exc:

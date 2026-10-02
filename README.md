@@ -13,8 +13,11 @@ pip install -e .[dev]
 python -m pytest
 python -m rpitest --mock                                   # gezonde gesimuleerde Pi
 python -m rpitest --mock --fault stuck_low:D:5 --fault bridge:D:10:11 --fault open:7
+python -m rpitest --mock --fault eth_100 --fault wifi_5g_dead --fault bt_dut_tx_dead
 ```
 Faalspecificaties: `stuck_low|stuck_high:<T|D>:<pin>`, `bridge:<T|D>:<a>:<b>`, `open:<pin>`.
+Systeemfouten: `eth_100`, `eth_errors`, `eth_slow`, `eth_loss`, `no_wifi`, `wifi_5g_dead`, `wifi_weak`,
+`no_bt`, `bt_dut_rx_dead`, `bt_dut_tx_dead`, `tester_no_wifi`, `tester_no_bt`.
 
 ## Op echte hardware
 Zie [docs/opstelling.md](docs/opstelling.md): onderdelen, bedrading van het breadboard,
@@ -23,6 +26,6 @@ bevestigd moet worden.
 
 ## Stand van zaken
 Klaar: skelet, agent (JSON-RPC over HTTP), mock met foutinjectie, GPIO-checks, JSON/HTML-rapport,
-echte GPIO-backend (libgpiod 2.x, enkel getest met een nep-`gpiod`), bedradingshandleiding.
-Nog te doen: de echte GPIO-backend op een Pi bevestigen, netwerk, USB, wifi, Bluetooth,
-voeding/temperatuur, tester-image, scherm/kiosk.
+echte GPIO-backend (libgpiod 2.x, enkel getest met een nep-`gpiod`), bedradingshandleiding,
+netwerk-, wifi- en bluetoothchecks (alleen getest met simulatie en nagebootste tooluitvoer).
+Nog te doen: alles op echte Pi's bevestigen, USB, voeding/temperatuur, tester-image, scherm/kiosk.

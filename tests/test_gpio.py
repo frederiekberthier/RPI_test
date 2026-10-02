@@ -82,7 +82,7 @@ def test_http_transport_roundtrip():
     try:
         client = RpcClient(f"http://127.0.0.1:{server.server_address[1]}")
         ctx = Context(wiring.port(TESTER), RemoteGpioPort(client), client, {})
-        report = run_all(ctx)
+        report = run_all(ctx, {"gpio": gpio.run})  # netwerk/wifi/bt hebben hier geen backend
         assert report.overall == "PASS"
         assert report.dut_info["serial"] == "MOCK0001"
     finally:
@@ -95,7 +95,8 @@ def test_unreachable_dut_skips_everything_else():
     ctx = Context(wiring.port(TESTER), RemoteGpioPort(client), client, {})
     report = run_all(ctx)
     statuses = {r.name: r.status for r in report.results}
-    assert statuses == {"connect": Status.FAIL, "gpio": Status.SKIP}
+    assert statuses == {"connect": Status.FAIL, "gpio": Status.SKIP, "network": Status.SKIP,
+                        "wifi": Status.SKIP, "bluetooth": Status.SKIP}
     assert report.overall == "FAIL"
 
 

@@ -3,15 +3,18 @@ from __future__ import annotations
 import datetime as dt
 from collections.abc import Callable
 
-from .checks import gpio, system
+from .checks import bluetooth, gpio, network, system, wifi
 from .context import Context
 from .models import CheckResult, Report, Status
 
 Check = Callable[[Context], list[CheckResult]]
 
-# Later aan te vullen: network, usb, wifi, bluetooth, power
+# Volgorde telt: bluetooth deelt een chip met wifi en draait dus erna.
 CHECK_GROUPS: dict[str, Check] = {
     "gpio": gpio.run,
+    "network": network.run,
+    "wifi": wifi.run,
+    "bluetooth": bluetooth.run,
 }
 
 

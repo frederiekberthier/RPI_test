@@ -8,6 +8,7 @@ import sys
 from .. import config
 from ..gpio import real
 from ..sysinfo import pi_info
+from ..system.linux import LinuxOps
 from .core import Agent
 from .server import make_server
 
@@ -30,7 +31,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Fout: {exc}", file=sys.stderr)
         return 2
 
-    server = make_server(Agent(port, pi_info), args.host, args.port)
+    server = make_server(Agent(port, pi_info, LinuxOps()), args.host, args.port)
     print(f"Agent luistert op {args.host}:{args.port} (GPIO-chip {port.chip_path})")
     try:
         server.serve_forever()
