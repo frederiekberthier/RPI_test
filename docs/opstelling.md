@@ -132,6 +132,46 @@ Aandachtspunten:
   **INCOMPLETE**, niet PASS.
 - Alle drempelwaarden staan in `rpitest/config.py`. Het zijn eerste schattingen; stel ze bij met een bekend goede Pi.
 
+## USB
+
+Software kan niet weten of een USB-poort werkt als er niets in zit. Daarom gebruiken we een
+**fixture met vier voorbereide teststicks** die tegelijk in de vier USB-A-poorten van de DUT zitten.
+
+**Onderdelen:** vier sticks van minstens 1 GB. Twee moeten echte USB 3-sticks zijn (voor de blauwe
+poorten), twee mogen USB 2 zijn. Ze moeten naast elkaar in de gestapelde poorten passen: gebruik
+smalle sticks of korte USB-verlengkabels, bevestigd in een blok of plank zodat de DUT er telkens
+op dezelfde manier aan gekoppeld wordt.
+
+**Sticks voorbereiden** (op een Linux-pc of de testpi, één keer per stick):
+```
+sudo .venv/bin/python -m rpitest.usbtools scan                              # welk /dev/sdX is mijn stick?
+sudo .venv/bin/python -m rpitest.usbtools prepare /dev/sdX --label SLOT1    # toont wat er gewist wordt
+sudo .venv/bin/python -m rpitest.usbtools prepare /dev/sdX --label SLOT1 --yes
+```
+Gebruik `SLOT1` en `SLOT2` voor de USB 3-sticks in de blauwe poorten, `SLOT3` en `SLOT4` voor de
+USB 2-poorten. **`prepare` overschrijft sector 0 (partitietabel) van de stick.** Gebruik hem alleen op
+sticks die uitsluitend teststick zijn. Het commando weigert partities, schijven die geen USB zijn, schijven
+groter dan 256 GiB en gekoppelde (mounted) apparaten.
+
+**Wat getest wordt** (`usb.*`):
+
+| Check | Wat gebeurt er |
+|---|---|
+| `usb.SLOT1` tot `usb.SLOT4` | stick gevonden; onderhandelde snelheid (5000 Mb/s op de blauwe poorten, 480 op de zwarte); 32 MB schrijven, terugleggen en vergelijken met een checksum; leessnelheid |
+| `usb.kernel` | `dmesg` na overstroom (over-current), mislukte enumeratie en xHCI-fouten sinds het opstarten; USB-disconnects en -resets tijdens de test |
+| `usb.fixture` | verschijnt alleen als er geen enkele teststick gevonden wordt: fixture niet aangesloten, of de USB-controller is defect |
+
+**Veiligheid:** de test schrijft alleen naar een apparaat waarvan sector 0 onze header bevat, en
+alleen in een testgebied vanaf 16 MB. Een stick van een student die toevallig in de DUT zit, heeft die
+header niet en wordt niet aangeraakt. Alleen `/dev/sdX`-apparaten die aan USB hangen worden geaccepteerd.
+
+**Poorten benoemen:** de namen en drempels per slot staan in `USB_SLOTS` in `rpitest/config.py`.
+Een ander fixture-indeling kan met `python -m rpitest --usb-fixture slots.json`, met een lijst van dezelfde
+velden (`label`, `name`, `min_speed_mbit`, `min_read_mb_s`).
+
+**Beperkingen:** stroomverbruik per poort wordt niet gemeten. Overstroom blijkt alleen uit het kernellogboek.
+De poort van de USB-C-voeding wordt niet getest.
+
 ## Eerste keer: wat nog bevestigd moet worden
 
 Dit is geschreven zonder echte hardware. Controleer bij de eerste run:
@@ -146,4 +186,10 @@ Dit is geschreven zonder echte hardware. Controleer bij de eerste run:
 5. **Bluetooth zichtbaar maken.** De testpi blijft zichtbaar zolang een `bluetoothctl`-sessie openstaat.
    Dat werkt volgens mijn kennis, maar is niet getest.
 6. **Hotspot op 5 GHz.** Controleer dat `nmcli dev wifi hotspot ... band a channel 36` op de testpi werkt.
-7. **Pull-up/-down testen** (`gpio.pulls`): zwevende lijnen kunnen op echte hardware afwijken van de simulatie. Slagen alle pinnen, dan is dat goed. Zo niet, noteer dan welke.
+7. **USB.** Controleer drie dingen:
+   - dat `usbtools scan` je sticks toont met het juiste label na `prepare`;
+   - dat de onderhandelde snelheid op de blauwe poorten echt 5000 Mb/s is met USB 3-sticks. Zo niet, kijk dan of de stick of de poort het probleem is;
+   - dat de leesdrempels (60 en 15 MB/s) bij jouw sticks haalbaar zijn. Pas ze aan op basis van de gemeten waarden in het rapport van een bekend goede Pi.
+
+   De opslagtest gebruikt `O_DIRECT` op het blokapparaat, en alleen op een gewoon bestand zonder `O_DIRECT` is hij getest. Meld het als dat op de echte stick een foutmelding geeft.
+8. **Pull-up/-down testen** (`gpio.pulls`): zwevende lijnen kunnen op echte hardware afwijken van de simulatie. Slagen alle pinnen, dan is dat goed. Zo niet, noteer dan welke.

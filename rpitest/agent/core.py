@@ -8,6 +8,7 @@ from collections.abc import Callable
 from ..gpio.ports import GpioPort
 from ..system.ops import OpsError, SystemOps
 
+_BLOCK = re.compile(r"^sd[a-z]{1,2}$")
 _MAC = re.compile(r"^(?:[0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}$")
 
 
@@ -63,6 +64,10 @@ class Agent:
             "bt_info": self.bt_info,
             "bt_scan": self.bt_scan,
             "bt_discoverable": self.bt_discoverable,
+            "usb_scan": self.usb_scan,
+            "usb_storage_test": self.usb_storage_test,
+            "usb_uptime": self.usb_uptime,
+            "usb_kernel_events": self.usb_kernel_events,
         }
 
     def dispatch(self, method: str, params: dict):
@@ -140,3 +145,18 @@ class Agent:
         if not isinstance(enabled, bool):
             raise ValueError("enabled moet true of false zijn")
         self.ops.bt_discoverable(enabled)
+
+    # --- usb ---
+    def usb_scan(self) -> list[dict]:
+        return self.ops.usb_scan()
+
+    def usb_storage_test(self, block: str, size_mb: int) -> dict:
+        if not isinstance(block, str) or not _BLOCK.match(block):
+            raise ValueError("ongeldig blokapparaat")
+        return self.ops.usb_storage_test(block, _int_between(size_mb, 1, 256, "size_mb"))
+
+    def usb_uptime(self) -> float:
+        return self.ops.usb_uptime()
+
+    def usb_kernel_events(self) -> list[dict]:
+        return self.ops.usb_kernel_events()

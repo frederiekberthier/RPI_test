@@ -7,7 +7,7 @@ from rpitest.checks import gpio
 from rpitest.context import Context
 from rpitest.gpio.mock import DUT, TESTER, MockWiring
 from rpitest.models import Status
-from rpitest.runner import run_all
+from rpitest.runner import CHECK_GROUPS, run_all
 
 INFO = {"model": "Raspberry Pi 5 (mock)", "ram_mb": 8192, "serial": "MOCK0001"}
 
@@ -95,8 +95,7 @@ def test_unreachable_dut_skips_everything_else():
     ctx = Context(wiring.port(TESTER), RemoteGpioPort(client), client, {})
     report = run_all(ctx)
     statuses = {r.name: r.status for r in report.results}
-    assert statuses == {"connect": Status.FAIL, "gpio": Status.SKIP, "network": Status.SKIP,
-                        "wifi": Status.SKIP, "bluetooth": Status.SKIP}
+    assert statuses == {"connect": Status.FAIL, **{name: Status.SKIP for name in CHECK_GROUPS}}
     assert report.overall == "FAIL"
 
 

@@ -31,3 +31,15 @@ WIFI_SCAN_TRIES = 3
 
 # --- bluetooth ---
 BT_SCAN_SECONDS = 10
+
+# --- usb: vier voorbereide teststicks in een vaste fixture ---
+# Elke stick heeft een label in sector 0 (zie `python -m rpitest.usbtools prepare`). Het label geeft
+# aan welke stick (en dus welke poort van de fixture) bedoeld wordt. SLOT1/2 horen in de blauwe
+# USB3-poorten te zitten met USB3-sticks, SLOT3/4 in de zwarte USB2-poorten.
+USB_TEST_MB = 32
+USB_SLOTS = (
+    {"label": "SLOT1", "name": "USB3 poort 1", "min_speed_mbit": 5000, "min_read_mb_s": 60},
+    {"label": "SLOT2", "name": "USB3 poort 2", "min_speed_mbit": 5000, "min_read_mb_s": 60},
+    {"label": "SLOT3", "name": "USB2 poort 1", "min_speed_mbit": 480, "min_read_mb_s": 15},
+    {"label": "SLOT4", "name": "USB2 poort 2", "min_speed_mbit": 480, "min_read_mb_s": 15},
+)

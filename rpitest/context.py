@@ -20,3 +20,4 @@ class Context:
     dut: Client  # algemene agent-aanroepen (info, netwerk, wifi, bluetooth, ...)
     tester_info: dict
     tester_ops: SystemOps | None = None  # netwerk/wifi/bluetooth aan de kant van de testpi
+    usb_slots: list[dict] | None = None  # None: config.USB_SLOTS

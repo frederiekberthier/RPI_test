@@ -5,13 +5,15 @@ waarden van de tester geen commando's kunnen injecteren."""
 
 from __future__ import annotations
 
+import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass
 from pathlib import Path
 
 from .. import config
-from . import parsers
+from . import parsers, storage
 from .ops import OpsError, SystemOps
 
 STAT_FIELDS = ("rx_packets", "tx_packets", "rx_errors", "tx_errors", "rx_crc_errors", "rx_dropped", "tx_dropped")
@@ -64,6 +66,31 @@ def list_ifaces(root: Path = Path("/")) -> tuple[list[str], list[str]]:
         elif (d / "device").exists():
             eth.append(d.name)
     return eth, wifi
+
+
+def _read_float(path: Path) -> float | None:
+    try:
+        return float(_read(path) or "")
+    except ValueError:
+        return None
+
+
+def is_usb_device_name(name: str) -> bool:
+    """'1-1.3' is een apparaat; 'usb1' (root hub) en '1-1.3:1.0' (interface) zijn dat niet."""
+    return ":" not in name and not name.startswith("usb")
+
+
+def usb_block_devices(root: Path = Path("/")) -> dict[str, str]:
+    """USB-pad -> blokapparaatnaam (bv. '1-1.3' -> 'sda')."""
+    found = {}
+    base = root / "sys/block"
+    if not base.is_dir():
+        return found
+    for d in sorted(base.iterdir()):
+        usb_path = parsers.usb_path_from_syspath(os.path.realpath(d))
+        if usb_path:
+            found[usb_path] = d.name
+    return found
 
 
 def rfkill_state(root: Path = Path("/")) -> list[dict]:
@@ -240,3 +267,48 @@ class LinuxOps(SystemOps):
                 proc.wait(timeout=3)
         except (OSError, subprocess.TimeoutExpired):
             proc.kill()
+
+    # --- usb ---
+    def usb_scan(self) -> list[dict]:
+        base = self._root / "sys/bus/usb/devices"
+        blocks = usb_block_devices(self._root)
+        devices = []
+        if not base.is_dir():
+            return devices
+        for d in sorted(base.iterdir()):
+            if not is_usb_device_name(d.name):
+                continue
+            vid = _read(d / "idVendor")
+            if vid is None:
+                continue
+            block = blocks.get(d.name)
+            size_sectors = _read_int(self._root / "sys/block" / block / "size") if block else None
+            devices.append({
+                "path": d.name, "vid": vid, "pid": _read(d / "idProduct"),
+                "manufacturer": _read(d / "manufacturer"), "product": _read(d / "product"),
+                "serial": _read(d / "serial"), "speed_mbit": _read_float(d / "speed"),
+                "is_hub": _read(d / "bDeviceClass") == "09", "block": block,
+                "size_bytes": size_sectors * 512 if size_sectors else None,
+                "fixture_label": storage.read_label(f"/dev/{block}") if block else None,
+            })
+        return devices
+
+    def usb_storage_test(self, block: str, size_mb: int) -> dict:
+        if not re.fullmatch(r"sd[a-z]{1,2}", block):
+            raise OpsError(f"geen toegestaan blokapparaat: {block!r}")
+        if parsers.usb_path_from_syspath(os.path.realpath(self._root / "sys/block" / block)) is None:
+            raise OpsError(f"{block} is geen USB-apparaat")
+        return storage.run_storage_test(f"/dev/{block}", size_mb)
+
+    def usb_uptime(self) -> float:
+        uptime = _read(self._root / "proc/uptime")
+        try:
+            return float((uptime or "").split()[0])
+        except (ValueError, IndexError) as exc:
+            raise OpsError("uptime niet te lezen") from exc
+
+    def usb_kernel_events(self) -> list[dict]:
+        result = self._run(["dmesg"], check=False)
+        if result.returncode != 0:
+            raise OpsError(f"dmesg faalde ({result.returncode}): {result.stderr.strip()[:200]}")
+        return parsers.parse_usb_events(result.stdout)

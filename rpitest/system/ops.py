@@ -71,3 +71,21 @@ class SystemOps(ABC):
 
     @abstractmethod
     def bt_discoverable(self, enabled: bool) -> None: ...
+
+    # --- usb ---
+    @abstractmethod
+    def usb_scan(self) -> list[dict]:
+        """Alle niet-root-hub USB-apparaten: {'path','vid','pid','manufacturer','product','serial',
+        'speed_mbit','is_hub','block','size_bytes','fixture_label'}"""
+
+    @abstractmethod
+    def usb_storage_test(self, block: str, size_mb: int) -> dict:
+        """Schrijf/lees/vergelijk op een voorbereide teststick: {'mb','write_mb_s','read_mb_s','mismatching_chunks'}"""
+
+    @abstractmethod
+    def usb_uptime(self) -> float:
+        """Seconden sinds opstarten, op dezelfde klok als de tijdstempels van usb_kernel_events."""
+
+    @abstractmethod
+    def usb_kernel_events(self) -> list[dict]:
+        """USB-problemen uit het kernellogboek: [{'ts','category','text'}]"""

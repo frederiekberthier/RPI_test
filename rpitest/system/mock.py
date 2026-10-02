@@ -12,6 +12,10 @@ Fouten (via --fault op de opdrachtregel):
   bt_dut_rx_dead DUT hoort geen andere bluetooth-apparaten
   bt_dut_tx_dead niemand hoort de DUT
   tester_no_wifi / tester_no_bt   de testpi mist wifi / bluetooth
+  usb_slotN_dead / _usb2 / _corrupt / _slow   (N = 1..4) stick niet gevonden / valt terug op USB2 /
+                 datafouten / traag
+  usb_no_sticks  geen enkele teststick aanwezig (fixture niet aangesloten)
+  usb_overcurrent / usb_disconnect   kernelmeldingen tijdens de test
 """
 
 from __future__ import annotations
@@ -20,7 +24,8 @@ from .. import config
 from .ops import OpsError, SystemOps
 
 TESTER, DUT = "T", "D"
-KNOWN_FAULTS = frozenset({
+USB_SLOT_FAULTS = {f"usb_slot{n}_{kind}" for n in range(1, 5) for kind in ("dead", "usb2", "corrupt", "slow")}
+KNOWN_FAULTS = frozenset(USB_SLOT_FAULTS | {"usb_no_sticks", "usb_overcurrent", "usb_disconnect"} | {
     "eth_100", "eth_errors", "eth_slow", "eth_loss", "no_wifi", "wifi_5g_dead", "wifi_weak",
     "no_bt", "bt_dut_rx_dead", "bt_dut_tx_dead", "tester_no_wifi", "tester_no_bt",
 })
@@ -137,3 +142,37 @@ class MockOps(SystemOps):
 
     def bt_discoverable(self, enabled: bool) -> None:
         self._env.discoverable[self._side] = enabled
+
+    # --- usb ---
+    def usb_scan(self) -> list[dict]:
+        if self._fault("usb_no_sticks"):
+            return []
+        devices = []
+        for n in range(1, 5):
+            if self._fault(f"usb_slot{n}_dead"):
+                continue
+            usb3 = n <= 2 and not self._fault(f"usb_slot{n}_usb2")
+            devices.append({"path": f"{2 if usb3 else 1}-1.{n}", "vid": "0781", "pid": "5581",
+                            "manufacturer": "Mock", "product": f"Stick {n}", "serial": f"MOCK{n}",
+                            "speed_mbit": 5000.0 if usb3 else 480.0, "is_hub": False, "block": f"sd{'abcd'[n - 1]}",
+                            "size_bytes": 8 * 1024 ** 3, "fixture_label": f"SLOT{n}"})
+        return devices
+
+    def usb_storage_test(self, block: str, size_mb: int) -> dict:
+        n = "abcd".index(block[-1]) + 1
+        fast = n <= 2 and not self._fault(f"usb_slot{n}_usb2")
+        slow = self._fault(f"usb_slot{n}_slow")
+        return {"mb": size_mb, "write_mb_s": 1.5 if slow else (80.0 if fast else 20.0),
+                "read_mb_s": 2.0 if slow else (180.0 if fast else 35.0),
+                "mismatching_chunks": 3 if self._fault(f"usb_slot{n}_corrupt") else 0}
+
+    def usb_uptime(self) -> float:
+        return 100.0
+
+    def usb_kernel_events(self) -> list[dict]:
+        events = []
+        if self._fault("usb_overcurrent"):
+            events.append({"ts": 120.0, "category": "overcurrent", "text": "usb usb1-port2: over-current condition"})
+        if self._fault("usb_disconnect"):
+            events.append({"ts": 130.0, "category": "disconnect", "text": "usb 1-1.3: USB disconnect, device number 4"})
+        return events

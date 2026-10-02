@@ -143,3 +143,41 @@ def parse_bluetooth_scan(text: str) -> list[dict]:
         if name:
             dev["name"] = name[1].strip()
     return [{k: v for k, v in d.items() if k != "seen"} for d in devices.values() if d["seen"]]
+
+
+_USB_PATH = re.compile(r"/(\d+-\d+(?:\.\d+)*):\d+\.\d+(?:/|$)")
+
+
+def usb_path_from_syspath(path: str) -> str | None:
+    """Het USB-pad (bv. '1-1.3') waaraan een sysfs-pad van een blokapparaat hangt."""
+    found = _USB_PATH.findall(path.replace("\\", "/"))
+    return found[-1] if found else None
+
+
+_EVENT_PATTERNS = (
+    ("overcurrent", re.compile(r"over-?current", re.I)),
+    ("enumerate", re.compile(
+        r"unable to enumerate|cannot enumerate|device not accepting address|device descriptor read/\w+, error"
+        r"|unable to read config index|Cannot enable\. Maybe the USB cable is bad|disabled by hub", re.I)),
+    ("xhci", re.compile(r"xhci.*(?:HC died|host (?:not halted|controller not responding)|command timed out"
+                        r"|Timeout while waiting|died)", re.I)),
+    ("disconnect", re.compile(r"USB disconnect, device number", re.I)),
+    ("reset", re.compile(r"reset (?:low|full|high|super)[- ]?speed(?:plus)? USB device number|"
+                         r"reset SuperSpeed(?: Plus)? USB device number", re.I)),
+)
+_DMESG_LINE = re.compile(r"^(?:<\d+>)?\[\s*(\d+\.\d+)\]\s*(.*)$")
+
+
+def parse_usb_events(dmesg_text: str) -> list[dict]:
+    """USB-gerelateerde problemen uit `dmesg`: [{'ts','category','text'}]."""
+    events = []
+    for line in dmesg_text.splitlines():
+        m = _DMESG_LINE.match(line.strip())
+        ts, text = (float(m[1]), m[2]) if m else (0.0, line.strip())
+        if not text:
+            continue
+        for category, pattern in _EVENT_PATTERNS:
+            if pattern.search(text):
+                events.append({"ts": ts, "category": category, "text": text})
+                break
+    return events
