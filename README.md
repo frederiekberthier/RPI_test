@@ -16,7 +16,13 @@ python -m rpitest --mock --fault stuck_low:D:5 --fault bridge:D:10:11 --fault op
 ```
 Faalspecificaties: `stuck_low|stuck_high:<T|D>:<pin>`, `bridge:<T|D>:<a>:<b>`, `open:<pin>`.
 
+## Op echte hardware
+Zie [docs/opstelling.md](docs/opstelling.md): onderdelen, bedrading van het breadboard,
+netwerk, installatie (Raspberry Pi OS **Trixie**, libgpiod 2.x) en wat bij de eerste run nog
+bevestigd moet worden.
+
 ## Stand van zaken
-Klaar: skelet, agent (JSON-RPC over HTTP), mock met foutinjectie, GPIO-checks, JSON/HTML-rapport.
-Nog te doen: echte GPIO-backend (gpiod), netwerk, USB, wifi, Bluetooth, voeding/temperatuur,
-tester-image, scherm/kiosk.
+Klaar: skelet, agent (JSON-RPC over HTTP), mock met foutinjectie, GPIO-checks, JSON/HTML-rapport,
+echte GPIO-backend (libgpiod 2.x, enkel getest met een nep-`gpiod`), bedradingshandleiding.
+Nog te doen: de echte GPIO-backend op een Pi bevestigen, netwerk, USB, wifi, Bluetooth,
+voeding/temperatuur, tester-image, scherm/kiosk.

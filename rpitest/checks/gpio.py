@@ -9,7 +9,7 @@ from __future__ import annotations
 from collections import defaultdict
 
 from ..context import Context
-from ..gpio.ports import EXTERNAL_PULLUP, PINS, Pull
+from ..gpio.ports import EXTERNAL_PULLUP, PINS, Pull, label
 from ..models import CheckResult, Status
 
 TESTER_TO_DUT = "tester->dut"
@@ -24,7 +24,7 @@ def _summarize(name: str, pins, issues: dict[int, list[str]], extra: str = "") -
     if not issues:
         return CheckResult(name, Status.PASS, f"alle {len(pins)} pinnen in orde{extra}",
                            {"pins": {p: "OK" for p in pins}})
-    bad = ", ".join(f"GPIO{p}" for p in sorted(issues))
+    bad = ", ".join(label(p) for p in sorted(issues))
     return CheckResult(name, Status.FAIL, f"{len(issues)} van {len(pins)} pinnen met probleem: {bad}",
                        {"pins": {p: issues.get(p, "OK") for p in pins}})
 
@@ -49,7 +49,7 @@ def check_pulls(ctx: Context, pins=PINS) -> CheckResult:
     skipped = sorted(EXTERNAL_PULLUP & set(pins))
     extra = ""
     if skipped:
-        extra = f" (pull-down niet testbaar op {', '.join(f'GPIO{p}' for p in skipped)}: vaste pull-up)"
+        extra = f" (pull-down niet testbaar op {', '.join(label(p) for p in skipped)}: vaste pull-up)"
     return _summarize("gpio.pulls", pins, issues, extra)
 
 
@@ -94,7 +94,7 @@ def check_drive(ctx: Context, pins=PINS) -> CheckResult:
     result = _summarize("gpio.drive", pins, issues)
     result.details["bridges"] = sorted(sorted(b) for b in bridges)
     if bridges:
-        pairs = ", ".join(f"GPIO{a}-GPIO{b}" for a, b in result.details["bridges"])
+        pairs = ", ".join(f"{label(a)} - {label(b)}" for a, b in result.details["bridges"])
         result.summary += f"; vermoedelijke kortsluiting tussen pinnen: {pairs}"
     return result
 
@@ -138,5 +138,5 @@ def _diagnose(wrong):
     for pair in bridges:
         a, b = sorted(pair)
         for p, other in ((a, b), (b, a)):
-            issues.setdefault(p, []).append(f"kortsluiting met GPIO{other}")
+            issues.setdefault(p, []).append(f"kortsluiting met {label(other)}")
     return issues, bridges

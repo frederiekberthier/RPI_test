@@ -4,8 +4,9 @@ import argparse
 import sys
 from pathlib import Path
 
+from . import config
 from . import report as report_mod
-from .agent.client import LocalClient, RemoteGpioPort
+from .agent.client import LocalClient, RemoteGpioPort, RpcClient
 from .agent.core import Agent
 from .context import Context
 from .gpio.mock import DUT, TESTER, MockWiring
@@ -23,19 +24,42 @@ def _mock_context(faults: list[str]) -> Context:
     return Context(wiring.port(TESTER), RemoteGpioPort(client), client, tester_info)
 
 
+def _real_context(dut_url: str, gpio_chip: str | None):
+    # pas hier importeren: vereist gpiod en dus een echte Pi
+    from .gpio.real import GpiodPort
+    from .sysinfo import pi_info
+
+    port = GpiodPort(gpio_chip)
+    client = RpcClient(dut_url)
+    return Context(port, RemoteGpioPort(client), client, pi_info()), port
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="rpitest", description="Test een tweedehands Raspberry Pi")
     parser.add_argument("--mock", action="store_true", help="gesimuleerde testpi + DUT (geen hardware nodig)")
     parser.add_argument("--fault", action="append", default=[], metavar="SPEC",
                         help="fout injecteren in de mock, bv. stuck_low:D:5, bridge:D:5:6, open:7")
+    parser.add_argument("--dut-url", default=f"http://{config.DUT_IP}:{config.AGENT_PORT}",
+                        help="adres van de agent op de DUT (echte hardware)")
+    parser.add_argument("--gpio-chip", help="pad van de gpiochip van de testpi (standaard: automatisch)")
     parser.add_argument("--out", type=Path, default=Path("reports"), help="map voor de rapporten")
     args = parser.parse_args(argv)
 
-    if not args.mock:
-        print("De echte hardware-backend is nog niet geimplementeerd; gebruik --mock.", file=sys.stderr)
-        return 2
+    port = None
+    if args.mock:
+        ctx = _mock_context(args.fault)
+    else:
+        try:
+            ctx, port = _real_context(args.dut_url, args.gpio_chip)
+        except RuntimeError as exc:
+            print(f"Fout: {exc}", file=sys.stderr)
+            return 2
 
-    report = run_all(_mock_context(args.fault))
+    try:
+        report = run_all(ctx)
+    finally:
+        if port is not None:
+            port.close()
     for r in report.results:
         print(f"[{r.status.value:4}] {r.name}: {r.summary}")
     json_path, html_path = report_mod.save(report, args.out)

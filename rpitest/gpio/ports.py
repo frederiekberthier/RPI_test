@@ -10,6 +10,20 @@ PINS: tuple[int, ...] = tuple(range(2, 28))
 # GPIO2/3 hebben op de Pi een vaste pull-up van 1,8 kOhm naar 3V3 (I2C).
 EXTERNAL_PULLUP: frozenset[int] = frozenset({2, 3})
 
+# BCM-nummer -> fysieke pin op de 40-pins header (voor in rapporten en de bedradingshandleiding).
+HEADER_PIN: dict[int, int] = {
+    2: 3, 3: 5, 4: 7, 5: 29, 6: 31, 7: 26, 8: 24, 9: 21, 10: 19, 11: 23, 12: 32, 13: 33,
+    14: 8, 15: 10, 16: 36, 17: 11, 18: 12, 19: 35, 20: 38, 21: 40, 22: 15, 23: 16,
+    24: 18, 25: 22, 26: 37, 27: 13,
+}
+# Deze headerpinnen mogen NOOIT tussen testpi en DUT verbonden worden (voeding).
+POWER_HEADER_PINS: frozenset[int] = frozenset({1, 2, 4, 17})
+GND_HEADER_PINS: tuple[int, ...] = (6, 9, 14, 20, 25, 30, 34, 39)
+
+
+def label(pin: int) -> str:
+    return f"GPIO{pin} (pin {HEADER_PIN[pin]})"
+
 
 class Pull:
     NONE = "none"
