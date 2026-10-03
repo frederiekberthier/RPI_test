@@ -312,3 +312,38 @@ def test_report_filename_is_sanitised(tmp_path):
     report = Report({}, {"serial": "../../etc/passwd"}, [], "2026-10-03T10:00:00", "2026-10-03T10:01:00")
     json_path, html_path = report_mod.save(report, tmp_path / "rapporten")
     assert json_path.parent == tmp_path / "rapporten" and report_mod.REPORT_NAME.match(html_path.name)
+
+
+# ---------------------------------------------------------------- issue #19: groepsstatus bij FAIL en WARN
+
+def group_status(state):
+    return {g["key"]: g["status"] for g in state["groups"]}
+
+
+def test_a_failing_group_is_marked_as_failed_not_done(tmp_path):
+    c = make_controller(tmp_path, make_context=mock_factory("stuck_low:C:5"))
+    status = group_status(run_to_end(c))
+    assert status["gpio"] == "fout"
+    assert status["connect"] == "klaar" and status["usb"] == "klaar" and status["network"] == "klaar"
+
+
+def test_a_group_with_only_warnings_is_marked_as_warning(tmp_path):
+    c = make_controller(tmp_path, make_context=mock_factory("wifi_weak"))
+    status = group_status(run_to_end(c))
+    assert status["wifi"] == "waarschuwing" and status["gpio"] == "klaar"
+
+
+def test_a_failed_connection_shows_as_failed(tmp_path):
+    def unreachable():
+        client = RpcClient("http://127.0.0.1:9", timeout=0.3)
+        return Context(MockWiring().port(SERVER), RemoteGpioPort(client), client, {}), (lambda: None)
+
+    c = make_controller(tmp_path, make_context=unreachable)
+    status = group_status(run_to_end(c))
+    assert status["connect"] == "fout"
+    assert all(v == "overgeslagen" for k, v in status.items() if k != "connect")
+
+
+def test_failure_wins_over_warning_in_the_same_group(tmp_path):
+    c = make_controller(tmp_path, make_context=mock_factory("wifi_weak", "wifi_5g_dead"))
+    assert group_status(run_to_end(c))["wifi"] == "fout"

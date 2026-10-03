@@ -144,10 +144,11 @@ class Controller:
             if g["key"] == key:
                 g["status"] = status
 
-    def _close_current(self, status: str = "klaar") -> None:
+    def _close_current(self, status: str | None = None) -> None:
+        """Sluit de groep die bezig was af. De status volgt uit de resultaten: fout, waarschuwing of klaar."""
         for g in self._run["groups"]:
             if g["status"] == "bezig":
-                g["status"] = status
+                g["status"] = status or ("fout" if g.get("failed") else "waarschuwing" if g.get("warned") else "klaar")
 
     def _group_started(self, name: str) -> None:
         with self._lock:
@@ -161,6 +162,14 @@ class Controller:
                                          "summary": result.summary})
             if result.status.value == "SKIP":  # een overgeslagen groep heeft de groepsnaam als resultaatnaam
                 self._set_group(result.name, "overgeslagen")
+                return
+            # een resultaat hoort bij de groep die nu loopt (de resultaatnamen zijn korter dan de groepsnamen)
+            for g in self._run["groups"]:
+                if g["key"] == self._run["current"]:
+                    if result.status.value == "FAIL":
+                        g["failed"] = True
+                    elif result.status.value == "WARN":
+                        g["warned"] = True
 
     def _should_stop(self) -> bool:
         return self._abort

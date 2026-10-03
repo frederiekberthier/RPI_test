@@ -38,7 +38,7 @@ ol{margin:0;padding-left:1.6rem}li{margin:.35rem 0}
 #groups{display:flex;flex-wrap:wrap;gap:.5rem;list-style:none;padding:0;margin:0}
 #groups li{margin:0;padding:.3rem .8rem;border-radius:2rem;background:var(--panel);border:1px solid var(--line);font-size:.8rem}
 #groups li.bezig{border-color:var(--accent);color:var(--accent)}
-#groups li.klaar{color:var(--pass)}#groups li.fout{color:var(--fail)}#groups li.overgeslagen{color:var(--skip)}
+#groups li.klaar{color:var(--pass)}#groups li.fout{color:var(--fail);border-color:var(--fail)}#groups li.waarschuwing{color:var(--warn);border-color:var(--warn)}#groups li.overgeslagen{color:var(--skip)}
 #results-wrap{flex:1;min-height:0;overflow:auto;border:1px solid var(--line);border-radius:.8rem}
 table{border-collapse:collapse;width:100%;font-size:.85rem}
 td{padding:.45rem .8rem;border-bottom:1px solid var(--line);vertical-align:top}
@@ -93,7 +93,7 @@ const OVERALL = {
   FAIL: ["Niet geslaagd", "Er is minstens één defect gevonden.", "var(--fail)"],
   INCOMPLETE: ["Onvolledig", "Niet alles kon getest worden.", "var(--skip)"],
 };
-const GROUP_STATUS = {wachten: "wacht", bezig: "bezig…", klaar: "klaar", overgeslagen: "overgeslagen", fout: "fout"};
+const GROUP_STATUS = {wachten: "wacht", bezig: "bezig…", klaar: "klaar", overgeslagen: "overgeslagen", fout: "fout", waarschuwing: "waarschuwing"};
 let state = null, pending = false;
 
 function el(tag, cls, text) {
