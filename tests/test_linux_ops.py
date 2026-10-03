@@ -220,6 +220,7 @@ def test_a_bluetooth_scan_that_never_started_is_an_error_not_an_empty_list(tmp_p
 
 def test_shell_runs_tools_in_the_c_locale_without_stdin(monkeypatch):
     import sys
+
     from rpitest.system.linux import Shell
     monkeypatch.setenv("LC_ALL", "nl_BE.UTF-8")
     monkeypatch.setenv("LANG", "nl_BE.UTF-8")

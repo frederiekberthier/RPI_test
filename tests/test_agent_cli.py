@@ -6,7 +6,6 @@ import pytest
 
 from rpitest.agent import __main__ as agent_cli
 
-
 # ---------------------------------------------------------------- issue #22: wachten tot het adres bestaat
 
 def test_the_agent_waits_until_the_test_address_exists():

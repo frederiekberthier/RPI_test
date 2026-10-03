@@ -20,7 +20,7 @@ def strip_ansi(text: str) -> str:
 
 
 def parse_ping(text: str) -> dict:
-    m = re.search(r"(\d+) packets transmitted, (\d+) (?:packets )?received.*?([\d.]+)% packet loss", text, re.S)
+    m = re.search(r"(\d+) packets transmitted, (\d+) (?:packets )?received.*?([\d.]+)% packet loss", text, re.DOTALL)
     if not m:
         raise OpsError(f"ping-uitvoer niet te lezen: {text.strip()[:200]!r}")
     result = {"sent": int(m[1]), "received": int(m[2]), "loss_pct": float(m[3]),
@@ -107,7 +107,7 @@ def parse_iw_link(text: str) -> dict:
 def parse_ip_addresses(text: str) -> dict[str, str]:
     """`ip -4 -o addr show` -> {interface: eerste IPv4-adres}"""
     found: dict[str, str] = {}
-    for m in re.finditer(r"^\d+:\s+(\S+)\s+inet (\d+\.\d+\.\d+\.\d+)/", text, re.M):
+    for m in re.finditer(r"^\d+:\s+(\S+)\s+inet (\d+\.\d+\.\d+\.\d+)/", text, re.MULTILINE):
         found.setdefault(m[1], m[2])
     return found
 
@@ -163,15 +163,15 @@ def usb_path_from_syspath(path: str) -> str | None:
 
 
 _EVENT_PATTERNS = (
-    ("overcurrent", re.compile(r"over-?current", re.I)),
+    ("overcurrent", re.compile(r"over-?current", re.IGNORECASE)),
     ("enumerate", re.compile(
         r"unable to enumerate|cannot enumerate|device not accepting address|device descriptor read/\w+, error"
-        r"|unable to read config index|Cannot enable\. Maybe the USB cable is bad|disabled by hub", re.I)),
+        r"|unable to read config index|Cannot enable\. Maybe the USB cable is bad|disabled by hub", re.IGNORECASE)),
     ("xhci", re.compile(r"xhci.*(?:HC died|host (?:not halted|controller not responding)|command timed out"
-                        r"|Timeout while waiting|died)", re.I)),
-    ("disconnect", re.compile(r"USB disconnect, device number", re.I)),
+                        r"|Timeout while waiting|died)", re.IGNORECASE)),
+    ("disconnect", re.compile(r"USB disconnect, device number", re.IGNORECASE)),
     ("reset", re.compile(r"reset (?:low|full|high|super)[- ]?speed(?:plus)? USB device number|"
-                         r"reset SuperSpeed(?: Plus)? USB device number", re.I)),
+                         r"reset SuperSpeed(?: Plus)? USB device number", re.IGNORECASE)),
 )
 _DMESG_LINE = re.compile(r"^(?:<\d+>)?\[\s*(\d+\.\d+)\]\s*(.*)$")
 
@@ -212,7 +212,7 @@ def decode_throttled(value: int | None) -> dict[str, bool]:
 def parse_pmic_adc(text: str) -> dict[str, float]:
     """`vcgencmd pmic_read_adc` (Pi 5): regels als 'EXT5V_V volt(24)=4.94V' -> {'EXT5V_V': 4.94}."""
     values = {}
-    for m in re.finditer(r"^\s*(\w+)\s+(?:volt|current)\(\d+\)=([\d.]+)[AV]", text, re.M):
+    for m in re.finditer(r"^\s*(\w+)\s+(?:volt|current)\(\d+\)=([\d.]+)[AV]", text, re.MULTILINE):
         values[m[1]] = float(m[2])
     return values
 

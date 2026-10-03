@@ -99,8 +99,8 @@ def real_context(client_url: str, gpio_chip: str | None = None,
     """Opent de GPIO van de TEST-SERVER. Gooit RuntimeError met een bruikbare melding als dat niet lukt."""
     # pas hier importeren: vereist gpiod en dus een echte Pi
     from .gpio.real import GpiodPort
-    from .system.linux import LinuxOps
     from .sysinfo import pi_info
+    from .system.linux import LinuxOps
 
     port = GpiodPort(gpio_chip)
     ops = LinuxOps()

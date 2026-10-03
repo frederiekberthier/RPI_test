@@ -76,7 +76,7 @@ def _open_checked(path: str, direct: bool, allow_file: bool) -> int:
 
 def is_mounted(block: str, mounts_text: str) -> bool:
     """Staat dit apparaat (of een partitie ervan) in /proc/mounts?"""
-    pattern = re.compile(rf"^/dev/{re.escape(block)}(\d+)?\s", re.M)
+    pattern = re.compile(rf"^/dev/{re.escape(block)}(\d+)?\s", re.MULTILINE)
     return bool(pattern.search(mounts_text))
 
 

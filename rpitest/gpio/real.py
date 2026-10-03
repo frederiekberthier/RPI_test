@@ -24,7 +24,7 @@ MIN_LINES = 28  # BCM 0..27
 def load_gpiod() -> ModuleType:
     try:
         import gpiod
-        import gpiod.line  # noqa: F401  (zorgt dat gpiod.line als attribuut bestaat)
+        import gpiod.line
     except ImportError as exc:
         raise RuntimeError("Python-module 'gpiod' ontbreekt: sudo apt install python3-libgpiod") from exc
     if not hasattr(gpiod, "request_lines"):

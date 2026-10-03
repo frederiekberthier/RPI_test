@@ -1,4 +1,4 @@
-# GPIO_test
+# Raspberry Pi testsoftware
 Test library om RPI hardwarematig te testen
 
 ## Opstelling

@@ -2,7 +2,14 @@ import pytest
 from fake_gpiod import Bias, Direction, FakeSystem, Value
 
 from rpitest.gpio import real
-from rpitest.gpio.ports import EXTERNAL_PULLUP, GND_HEADER_PINS, HEADER_PIN, PINS, POWER_HEADER_PINS, Pull
+from rpitest.gpio.ports import (
+    EXTERNAL_PULLUP,
+    GND_HEADER_PINS,
+    HEADER_PIN,
+    PINS,
+    POWER_HEADER_PINS,
+    Pull,
+)
 from rpitest.sysinfo import pi_info
 
 PI5_CHIPS = {

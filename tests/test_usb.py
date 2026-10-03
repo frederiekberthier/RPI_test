@@ -6,10 +6,13 @@ from rpitest import usbtools
 from rpitest.agent.client import LocalClient, RemoteGpioPort
 from rpitest.agent.core import Agent
 from rpitest.context import Context
-from rpitest.gpio.mock import CLIENT as GPIO_CLIENT, SERVER as GPIO_SERVER, MockWiring
+from rpitest.gpio.mock import CLIENT as GPIO_CLIENT
+from rpitest.gpio.mock import SERVER as GPIO_SERVER
+from rpitest.gpio.mock import MockWiring
 from rpitest.models import Status
 from rpitest.runner import run_all
-from rpitest.system import mock as sysmock, parsers, storage
+from rpitest.system import mock as sysmock
+from rpitest.system import parsers, storage
 from rpitest.system.linux import LinuxOps, is_usb_device_name, usb_block_devices
 from rpitest.system.ops import OpsError
 

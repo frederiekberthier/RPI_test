@@ -9,7 +9,6 @@ from rpitest import factory
 from rpitest.gpio.mock import CLIENT, SERVER, MockWiring
 from rpitest.ui import __main__ as ui_cli
 
-
 # ---------------------------------------------------------------- issue #36: --fault
 
 @pytest.mark.parametrize("kind,args,fragment", [
