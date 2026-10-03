@@ -1,0 +1,26 @@
+[project]
+name = "rpitest"
+version = "0.1.0"
+description = "Hardwaretest voor tweedehands Raspberry Pi's (testpi + te testen Pi)"
+requires-python = ">=3.11"
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest"]
+diagrams = ["matplotlib"]  # voor docs/diagrams/maak_schemas.py
+
+[project.scripts]
+rpitest = "rpitest.__main__:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["rpitest*"]
+
+[tool.setuptools.package-data]
+"rpitest.ui" = ["static/*"]
