@@ -234,7 +234,7 @@ def test_first_install_does_everything_in_a_sensible_order(box):
     install_call = next(c for c in calls if c.startswith("apt-get install -y python3-venv"))
     for pkg in ("python3-libgpiod", "iperf3", "iw", "bluez", "network-manager", "dnsmasq-base", "curl", "chromium"):
         assert pkg in install_call
-    assert any(c.startswith("python3 -m venv --system-site-packages") for c in calls)
+    assert any(c.startswith("python3 -m venv --clear --system-site-packages") for c in calls)
     assert sum(c.startswith("pip install --upgrade --force-reinstall --no-deps") for c in calls) == 1
     assert "hostnamectl set-hostname test-server" in calls
     for step in ("do_i2c 1", "do_spi 1", "do_serial_hw 1", "do_serial_cons 1", "do_wifi_country BE",
@@ -413,3 +413,29 @@ def test_an_outdated_interface_in_the_env_file_counts_as_missing(box):
 def test_both_units_read_the_env_file():
     for unit in sorted((ROOT / "image/systemd").glob("*.service")):
         assert "EnvironmentFile=-/etc/rpitest/env" in unit.read_text(), unit.name
+
+
+# ---------------------------------------------------------------- issue #23: half aangemaakte venv
+
+def make_half_venv(box):
+    """Zoals `python3 -m venv` die halverwege faalt: bin/python bestaat, pip niet."""
+    bin_dir = box.root / "app" / "venv" / "bin"
+    bin_dir.mkdir(parents=True)
+    python = bin_dir / "python"
+    python.write_text("#!/usr/bin/env bash\nexit 0\n", newline="\n")
+    python.chmod(0o755)
+    return bin_dir
+
+
+def test_a_venv_without_pip_counts_as_not_installed(box):
+    make_half_venv(box)
+    result = box.run("server", "--check")
+    assert result.returncode == 3 and "[ontbreekt ] Software" in result.clean and "pip ontbreekt" in result.clean
+
+
+def test_a_half_created_venv_is_rebuilt_instead_of_skipped(box):
+    bin_dir = make_half_venv(box)
+    result = box.run("server", "--skip-preflight")
+    assert result.returncode == 0, result.clean
+    assert any(c.startswith("python3 -m venv --clear --system-site-packages") for c in box.calls())
+    assert (bin_dir / "pip").exists()

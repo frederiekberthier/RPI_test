@@ -128,6 +128,10 @@ apply_packages() {
 check_app() {
   local installed
   installed="$(cat "$APP_DIR/REVISION" 2>/dev/null)"
+  if [ -x "$VENV/bin/python" ] && [ ! -x "$VENV/bin/pip" ]; then
+    DETAIL="venv onvolledig (pip ontbreekt)"  # python3 -m venv maakt eerst python en pas dan pip
+    return 1
+  fi
   if [ ! -x "$VENV/bin/python" ] || ! "$VENV/bin/python" -c "import rpitest, gpiod" 2>/dev/null; then
     DETAIL="nog niet geïnstalleerd (of rpitest/gpiod niet te importeren)"
     return 1
@@ -142,7 +146,8 @@ check_app() {
 apply_app() {
   mkdir -p "$APP_DIR" "$DATA_DIR/reports" || return 1
   # --system-site-packages: de module 'gpiod' komt uit het Debian-pakket python3-libgpiod
-  [ -x "$VENV/bin/python" ] || python3 -m venv --system-site-packages "$VENV" || return 1
+  # pip is het laatste dat de venv krijgt: ontbreekt het, dan is een eerdere poging halverwege mislukt (--clear begint opnieuw)
+  [ -x "$VENV/bin/pip" ] || python3 -m venv --clear --system-site-packages "$VENV" || return 1
   "$VENV/bin/pip" install --upgrade --force-reinstall --no-deps "$REPO_DIR" || return 1
   "$VENV/bin/python" -c "import rpitest, gpiod" || { warn "rpitest of gpiod niet te importeren na de installatie"; return 1; }
   repo_revision > "$APP_DIR/REVISION"
