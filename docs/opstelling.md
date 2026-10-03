@@ -169,8 +169,8 @@ Dit komt als laatste in de run, zodat onderspanning uit de eerdere tests ook in 
 | Check | Wat gebeurt er | Uitkomst |
 |---|---|---|
 | `power.sensors` | temperatuur, frequentie en `vcgencmd get_throttled` leesbaar | FAIL zonder temperatuur of frequentie; WARN zonder `get_throttled` |
-| `power.supply` | onderspanning tijdens de belasting; op de Pi 5 ook de gemeten ingangsspanning (`vcgencmd pmic_read_adc`) | FAIL bij onderspanning nu; WARN bij een spanning onder 4,75 V of onderspanning alleen sinds het opstarten |
-| `power.thermal` | rusttemperatuur, piek en laagste klokfrequentie | FAIL vanaf 85 °C; WARN bij throttling, vanaf 80 °C of al 60 °C in rust |
+| `power.supply` | onderspanning tijdens de belasting, ook een korte dip tussen twee metingen (de firmware houdt die vast in de `occurred`-bits); op de Pi 5 ook de gemeten ingangsspanning (`vcgencmd pmic_read_adc`) | FAIL bij onderspanning nu of nieuw tijdens de test; WARN bij een spanning onder 4,75 V of onderspanning alleen sinds het opstarten |
+| `power.thermal` | rusttemperatuur, piek en laagste klokfrequentie onder belasting (de meting na afloop telt niet mee: dan staat de klok weer op de rust-klok) | FAIL vanaf 85 °C; WARN bij throttling (ook een korte piek tussen twee metingen), vanaf 80 °C of al 60 °C in rust |
 | `power.cpu` | alle kernen actief (4) en een vaste SHA-256-keten geeft overal hetzelfde resultaat | FAIL bij een ontbrekende kern of verkeerde uitkomsten; WARN bij een veel tragere kern |
 | `power.memory` | 256 MB (max. de helft van het vrije geheugen) met vaste en adresafhankelijke patronen | FAIL bij fout teruggelezen blokken |
 

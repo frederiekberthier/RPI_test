@@ -20,6 +20,7 @@ Fouten (via --fault op de opdrachtregel):
   power_hot / power_warm / power_throttle     85+ graden / 80+ graden / klokfrequentie gedrukt
   power_cpu_error / power_ram_error / power_core_missing   rekenfouten / geheugenfouten / een kern minder
   power_no_sensor   temperatuursensor niet leesbaar
+  power_dip / power_throttle_blip   korte onderspanning / korte throttle tussen twee metingen (kleverige bits)
 """
 
 from __future__ import annotations
@@ -30,7 +31,8 @@ from .ops import OpsError, SystemOps
 SERVER, CLIENT = "S", "C"
 USB_SLOT_FAULTS = {f"usb_slot{n}_{kind}" for n in range(1, 5) for kind in ("dead", "usb2", "corrupt", "slow")}
 POWER_FAULTS = {"power_undervolt", "power_undervolt_history", "power_hot", "power_warm", "power_throttle",
-                "power_cpu_error", "power_ram_error", "power_core_missing", "power_no_sensor"}
+                "power_cpu_error", "power_ram_error", "power_core_missing", "power_no_sensor", "power_dip",
+                "power_throttle_blip"}
 KNOWN_FAULTS = frozenset(USB_SLOT_FAULTS | POWER_FAULTS | {"usb_no_sticks", "usb_overcurrent", "usb_disconnect"} | {
     "eth_100", "eth_errors", "eth_slow", "eth_loss", "no_wifi", "wifi_5g_dead", "wifi_weak",
     "no_bt", "bt_client_rx_dead", "bt_client_tx_dead", "server_no_wifi", "server_no_bt",
@@ -204,6 +206,12 @@ class MockOps(SystemOps):
             throttled |= 1 << 16
         if loaded and self._fault("power_undervolt"):
             throttled |= (1 << 0) | (1 << 16)
+        # korte dip/piek tussen twee metingen: alleen de kleverige bits blijven staan, ook nadat de belasting stopt
+        happened = env.stress_polls_done >= 2
+        if happened and self._fault("power_dip"):
+            throttled |= (1 << 16) | (1 << 17) | (1 << 18)
+        if happened and self._fault("power_throttle_blip"):
+            throttled |= (1 << 17) | (1 << 19)
         throttle = loaded and (self._fault("power_throttle") or self._fault("power_hot"))
         if throttle:
             throttled |= (1 << 3) | (1 << 19)

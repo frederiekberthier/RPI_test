@@ -86,6 +86,13 @@ def _flag(samples: list[dict], name: str) -> bool:
     return any(decode_throttled(s.get("throttled")).get(name) for s in samples)
 
 
+def _new_since_start(samples: list[dict], name: str) -> bool:
+    """Staat deze kleverige bit in een meting onder belasting, maar nog niet in de meting van vóór de belasting?
+    De firmware houdt 'occurred'-bits vast, dus ook een dip tussen twee metingen blijft zichtbaar."""
+    before = decode_throttled(samples[0].get("throttled")).get(name)
+    return bool(not before and _flag(samples[1:], name))
+
+
 def _loaded(samples: list[dict]) -> list[dict]:
     """De metingen onder belasting (samples[0] is de meting in rust). Zonder markering telt een meting als belast."""
     return [s for s in samples[1:] if s.get("loaded", True)]
@@ -98,6 +105,10 @@ def check_supply(samples: list[dict]) -> CheckResult:
         return CheckResult("power.supply", Status.FAIL,
                            "onderspanning tijdens de belasting (defecte voedingsingang, of een te zwakke "
                            "testvoeding: controleer met een bekend goede Pi)", details)
+    if _new_since_start(samples, "undervoltage_occurred"):
+        return CheckResult("power.supply", Status.FAIL,
+                           "onderspanning opgetreden tijdens de belasting (tussen twee metingen; defecte voedingsingang, "
+                           "of een te zwakke testvoeding: controleer met een bekend goede Pi)", details)
     if volts and min(volts) < config.MIN_5V_VOLT:
         return CheckResult("power.supply", Status.WARN,
                            f"ingangsspanning zakte tot {min(volts):.2f} V (minimum {config.MIN_5V_VOLT} V)", details)
@@ -123,8 +134,15 @@ def check_thermal(samples: list[dict]) -> CheckResult:
 
     if peak >= config.TEMP_FAIL_C:
         return CheckResult("power.thermal", Status.FAIL, f"te heet: {summary}", details)
-    throttled = _flag(loaded, "soft_temp_limit_now") or (
-        lowest is not None and lowest < config.THROTTLE_FREQ_RATIO and not _flag(loaded, "undervoltage_now"))
+    # throttling door onderspanning hoort bij de voeding, niet bij de temperatuur
+    undervoltage = _flag(loaded, "undervoltage_now") or _new_since_start(samples, "undervoltage_occurred")
+    throttled = (
+        _flag(loaded, "soft_temp_limit_now")
+        or _new_since_start(samples, "soft_temp_limit_occurred")
+        or (not undervoltage and (_new_since_start(samples, "throttled_occurred")
+                                  or _new_since_start(samples, "freq_capped_occurred")))
+        or (lowest is not None and lowest < config.THROTTLE_FREQ_RATIO and not undervoltage)
+    )
     if throttled or peak >= config.TEMP_WARN_C:
         return CheckResult("power.thermal", Status.WARN,
                            f"throttling of zeer warm (koeling ontbreekt of werkt slecht?): {summary}", details)
