@@ -462,3 +462,23 @@ def test_autologin_and_blanking_are_reported_separately(box):
 def test_the_client_needs_neither_autologin_nor_blanking(box):
     result = box.run("client", "--check")
     assert "Schermbeveiliging" not in result.clean and "Automatisch inloggen" not in result.clean
+
+
+# ---------------------------------------------------------------- issue #25: eigenaar van ~/.config
+
+def test_config_directories_are_created_for_the_kiosk_user_not_for_root(box):
+    box.run("server", "--skip-preflight")
+    home = (box.root / "home").as_posix()
+    assert f"install -d -o kiosk -g kiosk {home}/.config {home}/.config/labwc" in box.calls()
+
+
+def test_an_existing_custom_autostart_is_backed_up_once(box):
+    autostart = box.root / "home" / ".config" / "labwc" / "autostart"
+    autostart.parent.mkdir(parents=True)
+    autostart.write_text("mijn-eigen-paneel &\n")
+    box.run("server", "--skip-preflight")
+    backup = autostart.with_name("autostart.bak")
+    assert backup.read_text() == "mijn-eigen-paneel &\n"
+    assert "kiosk.sh" in autostart.read_text()
+    box.run("server", "--skip-preflight", "--force")  # opnieuw toepassen mag de back-up niet overschrijven
+    assert backup.read_text() == "mijn-eigen-paneel &\n"

@@ -244,11 +244,20 @@ check_kiosk() {
 
 apply_kiosk() {
   [ -n "$KIOSK_HOME" ] || { warn "geen gebruiker voor het scherm: start met sudo vanuit je gebruiker, of geef KIOSK_USER=<naam>"; return 1; }
-  mkdir -p "$APP_DIR" "$KIOSK_HOME/.config/labwc" || return 1
+  mkdir -p "$APP_DIR" || return 1
   install -m 0755 "$IMAGE_DIR/kiosk.sh" "$APP_DIR/kiosk.sh" || return 1
-  # Een eigen autostart vervangt die van het bureaublad: geen taakbalk, enkel onze pagina.
-  printf '%s\n' "$APP_DIR/kiosk.sh &" > "$KIOSK_HOME/.config/labwc/autostart" || return 1
-  chown -R "$KIOSK_USER:" "$KIOSK_HOME/.config/labwc" 2>/dev/null || warn "eigenaar van ~/.config/labwc niet aangepast"
+  # Beide mappen met de juiste eigenaar aanmaken: bestond ~/.config nog niet, dan werd hij als root aangemaakt
+  # en konden labwc en Chromium er na de automatische login niet in schrijven.
+  install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.config" "$KIOSK_HOME/.config/labwc" || return 1
+  local autostart="$KIOSK_HOME/.config/labwc/autostart"
+  # Een eigen autostart vervangt die van het bureaublad: geen taakbalk, enkel onze pagina. Een bestaande eigen
+  # autostart wordt eenmalig bewaard als autostart.bak.
+  if [ -f "$autostart" ] && ! grep -q "$APP_DIR/kiosk.sh" "$autostart" && [ ! -e "$autostart.bak" ]; then
+    cp -p "$autostart" "$autostart.bak" || return 1
+    warn "bestaande autostart bewaard als $autostart.bak"
+  fi
+  printf '%s\n' "$APP_DIR/kiosk.sh &" > "$autostart" || return 1
+  chown "$KIOSK_USER:" "$autostart" 2>/dev/null || warn "eigenaar van $autostart niet aangepast"
 }
 
 check_unit() {
