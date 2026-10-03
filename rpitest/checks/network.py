@@ -12,7 +12,11 @@ from ..models import CheckResult, Status
 from ..system.ops import OpsError
 
 ERROR_FIELDS = ("rx_errors", "tx_errors", "rx_crc_errors")
-_TOOL_ERRORS = (RpcError, OpsError)
+_TOOL_ERRORS = RpcError  # een fout van de TEST-CLIENT; een OpsError komt van de TEST-SERVER zelf (zie _server_problem)
+
+
+def _server_problem(name: str, exc: Exception) -> CheckResult:
+    return CheckResult(name, Status.SKIP, f"overgeslagen: probleem aan de TEST-SERVER, niet aan de TEST-CLIENT: {exc}")
 
 
 def run(ctx: Context) -> list[CheckResult]:
@@ -21,6 +25,8 @@ def run(ctx: Context) -> list[CheckResult]:
     try:
         client_if = ctx.client.call("net_iface_info")
         server_if = ctx.server_ops.net_iface_info()
+    except OpsError as exc:
+        return [_server_problem("net.link", exc)]
     except _TOOL_ERRORS as exc:
         return [CheckResult("net.link", Status.FAIL, f"ethernetgegevens niet op te halen: {exc}")]
     return [
@@ -35,14 +41,13 @@ def check_link(client_if: dict, server_if: dict) -> CheckResult:
     d, t = client_if.get("speed_mbit"), server_if.get("speed_mbit")
     if client_if.get("carrier") != 1 or d is None:
         return CheckResult("net.link", Status.FAIL, "TEST-CLIENT meldt geen link", details)
-    if d >= 1000 and (t or 0) >= 1000:
+    # beide kanten van de kabel onderhandelen dezelfde snelheid: de laagste telt, en poort en kabel zijn niet te scheiden
+    speed = min(d, t) if t else d
+    if speed >= 1000:
         return CheckResult("net.link", Status.PASS, f"link 1000 Mb/s {client_if.get('duplex')}, MAC {client_if.get('mac')}",
                            details)
-    if (t or 0) < 1000:
-        return CheckResult("net.link", Status.WARN,
-                           f"TEST-SERVER meldt {t} Mb/s: controleer testkabel/TEST-SERVER (TEST-CLIENT: {d} Mb/s)", details)
     return CheckResult("net.link", Status.FAIL,
-                       f"TEST-CLIENT onderhandelt slechts {d} Mb/s (defect aderpaar of ethernetaansluiting)", details)
+                       f"link op {speed} Mb/s in plaats van 1000: defecte ethernetpoort of kabel (defect aderpaar)", details)
 
 
 def check_latency(ctx: Context) -> CheckResult:
@@ -50,6 +55,8 @@ def check_latency(ctx: Context) -> CheckResult:
     try:
         to_client = ctx.server_ops.ping(config.CLIENT_IP, count)
         to_server = ctx.client.call("net_ping", host=config.SERVER_IP, count=count, _timeout=count * 1.3 + 15)
+    except OpsError as exc:
+        return _server_problem("net.latency", exc)
     except _TOOL_ERRORS as exc:
         return CheckResult("net.latency", Status.FAIL, f"ping mislukt: {exc}")
     details = {"server->client": to_client, "client->server": to_server}
@@ -88,6 +95,8 @@ def check_throughput(ctx: Context, client_before: dict, server_before: dict) -> 
                 pass
         client_after = ctx.client.call("net_iface_info")
         server_after = ctx.server_ops.net_iface_info()
+    except OpsError as exc:
+        return [_server_problem("net.throughput", exc), _server_problem("net.errors", exc)]
     except _TOOL_ERRORS as exc:
         return [CheckResult("net.throughput", Status.FAIL, f"doorvoertest mislukt: {exc}"),
                 CheckResult("net.errors", Status.SKIP, "overgeslagen: doorvoertest mislukt")]

@@ -10,7 +10,11 @@ from ..context import Context
 from ..models import CheckResult, Status
 from ..system.ops import OpsError
 
-_TOOL_ERRORS = (RpcError, OpsError)
+_TOOL_ERRORS = RpcError  # een fout van de TEST-CLIENT; een OpsError komt van de TEST-SERVER zelf
+
+
+def _server_problem(name: str, exc: Exception) -> CheckResult:
+    return CheckResult(name, Status.SKIP, f"overgeslagen: probleem aan de TEST-SERVER, niet aan de TEST-CLIENT: {exc}")
 
 
 def run(ctx: Context) -> list[CheckResult]:
@@ -21,6 +25,8 @@ def run(ctx: Context) -> list[CheckResult]:
         if not server["present"]:
             return [CheckResult("bluetooth", Status.SKIP, "overgeslagen: de TEST-SERVER heeft geen bluetooth-controller")]
         client = ctx.client.call("bt_info")
+    except OpsError as exc:
+        return [_server_problem("bt.controller", exc)]
     except _TOOL_ERRORS as exc:
         return [CheckResult("bt.controller", Status.FAIL, f"bluetooth-gegevens niet op te halen: {exc}")]
 
@@ -58,6 +64,8 @@ def check_receive(ctx: Context, server_address: str) -> CheckResult:
             found = ctx.client.call("bt_scan", seconds=secs, forget_mac=server_address, _timeout=secs + 25)
         finally:
             ctx.server_ops.bt_discoverable(False)
+    except OpsError as exc:
+        return _server_problem("bt.receive", exc)
     except _TOOL_ERRORS as exc:
         return CheckResult("bt.receive", Status.FAIL, f"scan mislukt: {exc}")
     return _verdict("bt.receive", found, server_address, "TEST-CLIENT ziet de TEST-SERVER",
@@ -76,6 +84,8 @@ def check_transmit(ctx: Context, client_address: str) -> CheckResult:
                 ctx.client.call("bt_discoverable", enabled=False, _timeout=15)
             except _TOOL_ERRORS:
                 pass
+    except OpsError as exc:
+        return _server_problem("bt.transmit", exc)
     except _TOOL_ERRORS as exc:
         return CheckResult("bt.transmit", Status.FAIL, f"scan mislukt: {exc}")
     return _verdict("bt.transmit", found, client_address, "TEST-SERVER ziet de TEST-CLIENT",

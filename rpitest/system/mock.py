@@ -1,7 +1,7 @@
 """Gesimuleerde TEST-SERVER + TEST-CLIENT voor netwerk, wifi en bluetooth, met foutinjectie.
 
 Fouten (via --fault op de opdrachtregel):
-  eth_100        TEST-CLIENT onderhandelt slechts 100 Mb/s
+  eth_100        de ethernetlink onderhandelt slechts 100 Mb/s (beide kanten)
   eth_errors     TEST-CLIENT telt veel ethernetfouten tijdens de test
   eth_slow       lage doorvoer
   eth_loss       pakketverlies op de kabel
@@ -69,7 +69,7 @@ class MockOps(SystemOps):
 
     # --- wired netwerk ---
     def net_iface_info(self) -> dict:
-        speed = 100 if self._side == CLIENT and self._fault("eth_100") else 1000
+        speed = 100 if self._fault("eth_100") else 1000  # beide kanten van de kabel onderhandelen hetzelfde
         errors = self._env.client_errors if self._side == CLIENT else 0
         return {"name": "eth0", "operstate": "up", "carrier": 1, "speed_mbit": speed, "duplex": "full",
                 "mac": "dc:a6:32:00:00:0" + ("2" if self._side == CLIENT else "1"),

@@ -12,7 +12,7 @@ from ..context import Context
 from ..models import CheckResult, Status
 from ..system.ops import OpsError
 
-_TOOL_ERRORS = (RpcError, OpsError)
+_TOOL_ERRORS = RpcError  # een fout van de TEST-CLIENT; een OpsError komt van de TEST-SERVER zelf
 
 
 def run(ctx: Context) -> list[CheckResult]:
@@ -22,6 +22,8 @@ def run(ctx: Context) -> list[CheckResult]:
         if not ctx.server_ops.wifi_info()["ifaces"]:
             return [CheckResult("wifi", Status.SKIP, "overgeslagen: de TEST-SERVER heeft geen wifi, dus geen accesspoint")]
         client_info = ctx.client.call("wifi_info")
+    except OpsError as exc:
+        return [CheckResult("wifi.radio", Status.SKIP, f"overgeslagen: probleem aan de TEST-SERVER, niet aan de TEST-CLIENT: {exc}")]
     except _TOOL_ERRORS as exc:
         return [CheckResult("wifi.radio", Status.FAIL, f"wifi-gegevens niet op te halen: {exc}")]
 
@@ -82,6 +84,8 @@ def check_band(ctx: Context, label: str, band: str, channel: int) -> CheckResult
         to_client = ctx.server_ops.ping(link["ip"], count)
         to_ap = ctx.client.call("net_ping", host=ap["ip"], count=count, _timeout=count * 1.3 + 15)
         details.update(ping_server_to_client=to_client, ping_client_to_server=to_ap)
+    except OpsError as exc:  # bv. het pingen vanaf de TEST-SERVER
+        return CheckResult(name, Status.SKIP, f"overgeslagen: probleem aan de TEST-SERVER, niet aan de TEST-CLIENT: {exc}", details)
     except _TOOL_ERRORS as exc:
         return CheckResult(name, Status.FAIL, f"test mislukt: {exc}", details)
     finally:
