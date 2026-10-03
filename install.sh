@@ -250,7 +250,9 @@ check_network() {
   local current
   current="$(nmcli -g ipv4.addresses connection show "$NM_PROFILE" 2>/dev/null)"
   DETAIL="nu: ${current:-geen profiel}"
-  [ "$current" = "$MY_IP/24" ]
+  [ "$current" = "$MY_IP/24" ] || return 1
+  # de diensten moeten dezelfde poort kiezen als dit profiel (zie rpitest/config.py, ETH_IFACE)
+  [ "$(grep -s '^ETH_IFACE=' "$ETC_DIR/env")" = "ETH_IFACE=$ETH_IFACE" ] || { DETAIL="$DETAIL; $ETC_DIR/env wijkt af"; return 1; }
 }
 
 # Vast IP-adres op de rechtstreekse kabel (geen gateway: dit is alleen de testkabel). Dit gaat als laatste:
@@ -263,6 +265,10 @@ apply_network() {
   nmcli connection add type ethernet ifname "$ETH_IFACE" con-name "$NM_PROFILE" \
     ipv4.method manual ipv4.addresses "$MY_IP/24" ipv6.method disabled \
     connection.autoconnect yes connection.autoconnect-priority 100 >/dev/null || return 1
+  # de diensten lezen dit bestand (EnvironmentFile), zodat zij dezelfde poort kiezen
+  mkdir -p "$ETC_DIR" || return 1
+  { grep -sv '^ETH_IFACE=' "$ETC_DIR/env"; echo "ETH_IFACE=$ETH_IFACE"; } > "$ETC_DIR/env.new" \
+    && mv "$ETC_DIR/env.new" "$ETC_DIR/env" || return 1
   nmcli connection up "$NM_PROFILE" >/dev/null 2>&1 \
     || warn "profiel nog niet actief (geen kabel aangesloten?); het start vanzelf zodra er link is"
 }

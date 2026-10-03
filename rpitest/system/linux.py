@@ -104,10 +104,24 @@ def rfkill_state(root: Path = Path("/")) -> list[dict]:
             for d in sorted(base.iterdir())]
 
 
+def choose_interface(candidates: list[str], preferred: str | None, addresses: dict[str, str] | None = None) -> str | None:
+    """Kies de interface voor de test: de gevraagde naam, anders die met het testadres, anders de eerste.
+    Een USB-adapter (enx...) sorteert voor 'eth0' en mag de ingebouwde poort niet verdringen."""
+    if preferred in candidates:
+        return preferred
+    for name in candidates:
+        if (addresses or {}).get(name, "").startswith(config.TEST_NETWORK_PREFIX):
+            return name
+    return candidates[0] if candidates else None
+
+
 class LinuxOps(SystemOps):
-    def __init__(self, shell: Shell | None = None, root: Path = Path("/")):
+    def __init__(self, shell: Shell | None = None, root: Path = Path("/"), eth_iface: str | None = None,
+                 wifi_iface: str | None = None):
         self._sh = shell or Shell()
         self._root = root
+        self._eth_pref = eth_iface or os.environ.get("ETH_IFACE") or config.ETH_IFACE
+        self._wifi_pref = wifi_iface or os.environ.get("WIFI_IFACE") or config.WIFI_IFACE
         self._iperf_server: subprocess.Popen | None = None
         self._bt_proc: subprocess.Popen | None = None
         self._stress: dict | None = None
@@ -120,17 +134,22 @@ class LinuxOps(SystemOps):
             raise OpsError(f"{' '.join(argv[:3])} faalde ({result.returncode}): {detail}")
         return result
 
+    def _addresses(self) -> dict[str, str]:
+        return parsers.parse_ip_addresses(self._run(["ip", "-4", "-o", "addr", "show"], check=False).stdout)
+
     def _eth(self) -> str:
         eth, _ = list_ifaces(self._root)
         if not eth:
             raise OpsError("geen ethernet-interface gevonden")
-        return eth[0]
+        # alleen het adres opvragen als de gewenste poort er niet is (bespaart een aanroep)
+        addresses = {} if self._eth_pref in eth else self._addresses()
+        return choose_interface(eth, self._eth_pref, addresses)
 
     def _wlan(self) -> str:
         _, wifi = list_ifaces(self._root)
         if not wifi:
             raise OpsError("geen wifi-interface gevonden")
-        return wifi[0]
+        return choose_interface(wifi, self._wifi_pref)
 
     def _ip_of(self, iface: str) -> str | None:
         return parsers.parse_ip_addr(self._run(["ip", "-4", "-o", "addr", "show", "dev", iface], check=False).stdout)

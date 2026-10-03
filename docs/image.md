@@ -87,6 +87,7 @@ Schrijf `client-master.img` met Imager of `dd` naar elke nieuwe SD.
 | Rapporten (HTML + JSON) | `/var/lib/rpitest/reports` op de TEST-SERVER |
 | Diensten | `rpitest-ui` (TEST-SERVER), `rpitest-agent` (TEST-CLIENT) |
 | IP-adressen | `rpitest/config.py` (TEST-SERVER `.1`, TEST-CLIENT `.2`); de scripts lezen ze daar |
+| Gekozen netwerkpoort (`ETH_IFACE`) | `/etc/rpitest/env`, door `install.sh` geschreven en door beide diensten gelezen; de ingebouwde `eth0` heeft voorrang op USB-adapters |
 | Extra opties voor het scherm | `/etc/rpitest/ui.env`, bv. `RPITEST_UI_ARGS=--usb-fixture /etc/rpitest/usb_fixture.json` |
 | Logboek | `journalctl -u rpitest-ui` of `journalctl -u rpitest-agent` |
 

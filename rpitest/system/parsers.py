@@ -104,6 +104,14 @@ def parse_iw_link(text: str) -> dict:
     }
 
 
+def parse_ip_addresses(text: str) -> dict[str, str]:
+    """`ip -4 -o addr show` -> {interface: eerste IPv4-adres}"""
+    found: dict[str, str] = {}
+    for m in re.finditer(r"^\d+:\s+(\S+)\s+inet (\d+\.\d+\.\d+\.\d+)/", text, re.M):
+        found.setdefault(m[1], m[2])
+    return found
+
+
 def parse_ip_addr(text: str) -> str | None:
     m = re.search(r"inet (\d+\.\d+\.\d+\.\d+)/", text)
     return m[1] if m else None

@@ -124,3 +124,52 @@ def test_bt_scan_forgets_target_first(tmp_path):
     found = LinuxOps(shell, tmp_path).bt_scan(5, "DC:A6:32:00:00:01")
     assert shell.calls[0] == ["bluetoothctl", "remove", "DC:A6:32:00:00:01"]
     assert found[0]["address"] == "DC:A6:32:00:00:01"
+
+
+# ---------------------------------------------------------------- issue #7: kies de juiste interface
+
+def add_iface(root, name, kind, speed="100", mac="aa:bb:cc:00:00:99"):
+    path = root / "sys/class/net" / name
+    (path / kind).mkdir(parents=True)
+    (path / "statistics").mkdir()
+    for fname, value in (("operstate", "up"), ("carrier", "1"), ("speed", speed), ("duplex", "full"), ("address", mac)):
+        (path / fname).write_text(value + "\n")
+
+
+def test_onboard_eth0_is_preferred_over_a_usb_ethernet_adapter(tmp_path):
+    root = make_sys(tmp_path)
+    add_iface(root, "enxa0cec8123456", "device", speed="100")  # sorteert vóór 'eth0'
+    info = LinuxOps(FakeShell([]), root).net_iface_info()
+    assert info["name"] == "eth0" and info["speed_mbit"] == 1000
+
+
+def test_the_interface_carrying_the_test_address_is_used_when_eth0_does_not_exist(tmp_path):
+    root = make_sys(tmp_path)
+    import shutil
+    shutil.rmtree(root / "sys/class/net/eth0")
+    add_iface(root, "enp1s0", "device")
+    add_iface(root, "enxa0cec8123456", "device")
+    ip_out = ("2: enp1s0    inet 10.0.0.5/24 brd 10.0.0.255 scope global\n"
+              "3: enxa0cec8123456    inet 192.168.77.1/24 scope global\n")
+    ops = LinuxOps(FakeShell([(("ip",), ShellResult(0, ip_out))]), root)
+    assert ops.net_iface_info()["name"] == "enxa0cec8123456"
+
+
+def test_an_explicit_interface_name_wins(tmp_path):
+    root = make_sys(tmp_path)
+    add_iface(root, "enxa0cec8123456", "device")
+    assert LinuxOps(FakeShell([]), root, eth_iface="enxa0cec8123456").net_iface_info()["name"] == "enxa0cec8123456"
+
+
+def test_onboard_wlan0_is_preferred_over_a_usb_wifi_adapter(tmp_path):
+    root = make_sys(tmp_path)
+    add_iface(root, "wlaa-usb", "wireless")  # sorteert vóór 'wlan0'
+    shell = FakeShell([(("iw",), ShellResult(0, "Not connected.\n")), (("ip",), ShellResult(0, ""))])
+    LinuxOps(shell, root).wifi_link()
+    assert shell.calls[0] == ["iw", "dev", "wlan0", "link"]
+
+
+def test_ip_address_parser():
+    from rpitest.system.parsers import parse_ip_addresses
+    text = "2: eth0    inet 192.168.77.2/24 brd 192.168.77.255 scope global eth0\n3: wlan0    inet 10.42.0.5/24 scope global\n"
+    assert parse_ip_addresses(text) == {"eth0": "192.168.77.2", "wlan0": "10.42.0.5"}

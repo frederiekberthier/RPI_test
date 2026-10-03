@@ -137,6 +137,7 @@ class Sandbox:
             "APP_DIR": (self.root / "app").as_posix(),
             "DATA_DIR": (self.root / "data").as_posix(),
             "SYSTEMD_DIR": (self.root / "systemd").as_posix(),
+            "ETC_DIR": (self.root / "etc").as_posix(),
             "HOSTS_FILE": (self.root / "hosts").as_posix(),
             "OS_RELEASE_FILE": (self.root / "os-release").as_posix(),
             "KIOSK_USER": "kiosk",
@@ -361,3 +362,25 @@ def test_bad_arguments(box):
     assert result.returncode != 0 and "server' of 'client" in result.clean
     help_text = box.run("--help")
     assert help_text.returncode == 0 and "--check" in help_text.clean and "sudo ./install.sh server" in help_text.clean
+
+
+# ---------------------------------------------------------------- issue #7: dezelfde interface in install en dienst
+
+def test_the_chosen_interface_is_written_for_the_services(box):
+    box.run("server", "--skip-preflight", ETH_IFACE="enp3s0")
+    env_file = box.root / "etc" / "env"
+    assert "ETH_IFACE=enp3s0" in env_file.read_text()
+    add = next(c for c in box.calls() if c.startswith("nmcli connection add"))
+    assert "ifname enp3s0" in add
+
+
+def test_an_outdated_interface_in_the_env_file_counts_as_missing(box):
+    installed_state(box)
+    (box.root / "etc" / "env").write_text("ETH_IFACE=eth9\n")
+    result = box.run("server", "--check")
+    assert result.returncode == 3 and "[ontbreekt ] Vast IP-adres" in result.clean
+
+
+def test_both_units_read_the_env_file():
+    for unit in sorted((ROOT / "image/systemd").glob("*.service")):
+        assert "EnvironmentFile=-/etc/rpitest/env" in unit.read_text(), unit.name
