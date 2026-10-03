@@ -84,6 +84,23 @@ exit 0
 ''',
     "rfkill": 'echo "rfkill $*" >> "$STATE/calls"; exit 0',
     "chown": "exit 0",
+    # install (coreutils) zou -o/-g met echte gebruikers willen; hier alleen vastleggen en nabootsen
+    "install": """
+echo "install $*" >> "$STATE/calls"
+mode=""; dir=0; args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -m) mode="$2"; shift 2 ;;
+    -o|-g) shift 2 ;;
+    -d) dir=1; shift ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+if [ "$dir" = 1 ]; then mkdir -p "${args[@]}"; exit $?; fi
+cp "${args[0]}" "${args[1]}" || exit 1
+[ -n "$mode" ] && chmod "$mode" "${args[1]}"
+exit 0
+""",
     "findmnt": "echo ext4",
     "systemctl": '''
 echo "systemctl $*" >> "$STATE/calls"
@@ -111,7 +128,7 @@ exit 0
 
 # opdrachten die iets wijzigen: na een volledige installatie mogen die niet opnieuw voorkomen
 MUTATING = re.compile(
-    r"^(apt-get |python3 -m venv|pip |hostnamectl |rfkill |raspi-config nonint (do_|enable_)|"
+    r"^(apt-get |python3 -m venv|pip |install |hostnamectl |rfkill |raspi-config nonint (do_|enable_)|"
     r"nmcli connection (add|delete|up)|systemctl (enable|restart|try-restart|daemon-reload))")
 
 
@@ -123,7 +140,9 @@ class Sandbox:
         for directory in (self.state, self.bin, tmp_path / "systemd", tmp_path / "home"):
             directory.mkdir()
         for name, body in STUBS.items():
-            (self.bin / name).write_text("#!/usr/bin/env bash\n" + body.lstrip("\n"), newline="\n")
+            stub = self.bin / name
+            stub.write_text("#!/usr/bin/env bash\n" + body.lstrip("\n"), newline="\n")
+            stub.chmod(0o755)  # zonder uitvoerrechten slaat bash de stub op Linux over en draait het echte commando
         (tmp_path / "os-release").write_text("VERSION_CODENAME=trixie\n")
         (tmp_path / "hosts").write_text("127.0.0.1\tlocalhost\n127.0.1.1\traspberrypi\n")
         self.packages = ["python3-venv", "python3-libgpiod", "iperf3", "iw", "rfkill", "bluez", "network-manager",
@@ -151,8 +170,18 @@ class Sandbox:
         existing = self.state / "dpkg"
         existing.write_text("\n".join(names) + "\n")
 
+    def assert_stubs_are_used(self, env):
+        """Weiger te draaien als een systeemcommando niet naar de stub wijst: de echte zouden het systeem wijzigen."""
+        probe = subprocess.run([BASH, "-c", "command -v " + " ".join(STUBS)], env=env, capture_output=True, text=True,
+                               check=False)
+        found = probe.stdout.split()
+        wrong = [line for line in found if self.root.name not in line]
+        assert len(found) == len(STUBS) and not wrong, f"stubs niet actief, echte commando's: {wrong or probe.stderr}"
+
     def run(self, *args, **env):
-        result = subprocess.run([BASH, (ROOT / "install.sh").as_posix(), *args], cwd=ROOT, env=self.env(**env),
+        full_env = self.env(**env)
+        self.assert_stubs_are_used(full_env)
+        result = subprocess.run([BASH, (ROOT / "install.sh").as_posix(), *args], cwd=ROOT, env=full_env,
                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         result.clean = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout + result.stderr)
         return result

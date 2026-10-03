@@ -13,11 +13,6 @@ from rpitest.system import mock as sysmock
 INFO = {"model": "Raspberry Pi 5 (mock)", "ram_mb": 8192, "serial": "MOCK0001"}
 
 
-@pytest.fixture(autouse=True)
-def no_sleep(monkeypatch):
-    monkeypatch.setattr("rpitest.checks.wifi.time.sleep", lambda s: None)
-
-
 def make_ctx(*faults):
     env = sysmock.MockEnv(faults)
     wiring = MockWiring()
