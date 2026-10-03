@@ -69,32 +69,39 @@ def run_storage_test(path: str, size_mb: int, offset_mb: int = SCRATCH_OFFSET_MB
         buf = mmap.mmap(-1, CHUNK)
         hashes = []
 
+        # Alleen de I/O zelf wordt gemeten: urandom, sha256 en het kopiëren naar de buffer horen niet bij de
+        # snelheid van de stick (op een Pi 4 zonder crypto-extensies zou dat de MB/s merkbaar drukken).
         f.seek(start)
-        t0 = time.perf_counter()
+        write_s = 0.0
         for _ in range(n_chunks):
             data = os.urandom(CHUNK)
             hashes.append(hashlib.sha256(data).digest())
             buf.seek(0)
             buf.write(data)
-            if f.write(buf) != CHUNK:
+            t0 = time.perf_counter()
+            written = f.write(buf)
+            write_s += time.perf_counter() - t0
+            if written != CHUNK:
                 raise OpsError("onvolledige schrijfbewerking")
+        t0 = time.perf_counter()
         os.fsync(fd)
-        write_s = time.perf_counter() - t0
+        write_s += time.perf_counter() - t0
 
         f.seek(start)
         mismatches = 0
-        t0 = time.perf_counter()
+        read_s = 0.0
         for expected in hashes:
             got = 0
             while got < CHUNK:  # een lees mag korter zijn dan gevraagd
                 view = memoryview(buf)[got:]
+                t0 = time.perf_counter()
                 n = f.readinto(view)
+                read_s += time.perf_counter() - t0
                 if not n:
                     raise OpsError("onverwacht einde bij terugleggen")
                 got += n
             if hashlib.sha256(buf).digest() != expected:
                 mismatches += 1
-        read_s = time.perf_counter() - t0
     except OSError as exc:
         raise OpsError(f"I/O-fout op {path}: {exc}") from exc
     finally:

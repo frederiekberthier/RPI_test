@@ -256,3 +256,24 @@ def test_parse_usb_events_ignores_normal_messages():
     text = ("[  1.0] usb 1-1.4: new high-speed USB device number 7 using xhci_hcd\n"
             "[  2.0] usb 1-1.3: USB disconnect, device number 4\n")
     assert [e["category"] for e in parsers.parse_usb_events(text)] == ["disconnect"]
+
+
+# ---------------------------------------------------------------- issue #8: snelheid zonder rekentijd
+
+def test_reported_speeds_do_not_include_hashing_time(tmp_path, monkeypatch):
+    import hashlib
+    import time
+
+    real_sha256 = hashlib.sha256
+
+    def slow_sha256(data=b""):
+        # actief wachten: conftest maakt time.sleep een no-op. Met het hashen in de meting blijft de snelheid onder 10 MB/s.
+        end = time.perf_counter() + 0.1
+        while time.perf_counter() < end:
+            pass
+        return real_sha256(data)
+
+    monkeypatch.setattr(storage.hashlib, "sha256", slow_sha256)
+    result = storage.run_storage_test(make_stick(tmp_path), size_mb=4, direct=False)
+    assert result["read_mb_s"] > 30 and result["write_mb_s"] > 30, result
+    assert result["mismatching_chunks"] == 0
