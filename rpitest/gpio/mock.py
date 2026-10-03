@@ -90,7 +90,7 @@ class MockWiring:
             raise ValueError(f"onbekende fout: {kind!r}")
         if len(args) != len(shape):
             raise ValueError(f"fout {kind!r} verwacht {_describe(shape)}, kreeg {len(args)} argument(en)")
-        values = [_side(a) if part == "zijde" else _pin(a) for part, a in zip(shape, args)]
+        values = [_side(a) if part == "zijde" else _pin(a) for part, a in zip(shape, args, strict=True)]
         if kind == "stuck_low":
             self._stuck[(values[0], values[1])] = 0
         elif kind == "stuck_high":
