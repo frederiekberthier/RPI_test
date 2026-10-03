@@ -179,11 +179,13 @@ def web(tmp_path):
     thread.start()
     port = srv.server_address[1]
 
-    def request(method, path, body=None, host=None, raw=None):
+    def request(method, path, body=None, host=None, raw=None, headers=None):
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
-        headers = {"Host": host} if host else {}
-        if body is not None or raw is not None:
-            headers["Content-Type"] = "application/json"
+        sent = {"Host": host} if host else {}
+        if method == "POST":
+            sent["Content-Type"] = "application/json"  # zoals de pagina; een test kan dat overschrijven
+        sent.update(headers or {})
+        headers = sent
         payload = raw if raw is not None else (json.dumps(body) if body is not None else None)
         conn.request(method, path, payload, headers)
         response = conn.getresponse()
@@ -191,6 +193,7 @@ def web(tmp_path):
         conn.close()
         return response.status, data
 
+    request.port = port
     yield controller, request, tmp_path
     srv.shutdown()
     srv.server_close()
@@ -285,7 +288,7 @@ def test_shutdown_is_disabled_by_default(tmp_path, monkeypatch):
     monkeypatch.setattr(ui_server.subprocess, "Popen", lambda argv: pytest.fail("mag niet uitschakelen"))
     try:
         conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
-        conn.request("POST", "/api/shutdown", json.dumps({"confirm": True}))
+        conn.request("POST", "/api/shutdown", json.dumps({"confirm": True}), {"Content-Type": "application/json"})
         assert conn.getresponse().status == 403
     finally:
         srv.shutdown()
@@ -382,3 +385,39 @@ def test_a_crash_during_cleanup_still_ends_in_done(tmp_path):
 
     s = run_to_end(make_controller(tmp_path, make_context=make))
     assert s["phase"] == "done" and s["last"]["html"] is not None
+
+
+# ---------------------------------------------------------------- issue #17 en #18: cross-site verzoeken en vreemde bodies
+
+def test_a_post_that_is_not_json_is_refused_without_side_effects(web):
+    controller, request, _ = web
+    status, _ = request("POST", "/api/start", raw=b"{}", headers={"Content-Type": "text/plain"})
+    assert status == 415 and controller.state()["phase"] == "idle"  # text/plain heeft geen CORS-preflight
+    assert request("POST", "/api/start", raw=b"{}", headers={"Content-Type": "application/x-www-form-urlencoded"})[0] == 415
+    status, _ = request("POST", "/api/start", raw=b"{}", headers={"Content-Type": "application/json; charset=utf-8"})
+    assert status == 200
+
+
+def test_a_post_from_another_origin_is_refused_without_side_effects(web):
+    controller, request, _ = web
+    status, _ = request("POST", "/api/start", {}, headers={"Origin": "http://evil.example"})
+    assert status == 403 and controller.state()["phase"] == "idle"
+    assert request("POST", "/api/start", {}, headers={"Origin": "null"})[0] == 403
+    assert request("POST", "/api/reset", {}, headers={"Origin": "http://127.0.0.1:1"})[0] == 403  # verkeerde poort
+    assert controller.state()["phase"] == "idle"
+
+
+def test_a_post_from_the_page_itself_is_accepted(web):
+    controller, request, _ = web
+    assert request("POST", "/api/start", {}, headers={"Origin": f"http://127.0.0.1:{request.port}"})[0] == 200
+    controller.join(30)
+    host = f"localhost:{request.port}"  # een browser stuurt Host en Origin altijd samen
+    assert request("POST", "/api/reset", {}, host=host, headers={"Origin": f"http://{host}"})[0] == 200
+
+
+@pytest.mark.parametrize("raw", [b"[]", b"null", b"3", b'"tekst"', b"true"])
+def test_a_json_body_that_is_not_an_object_is_a_clean_400(web, monkeypatch, raw):
+    _, request, _ = web
+    monkeypatch.setattr(ui_server.subprocess, "Popen", lambda argv: pytest.fail("mag niet uitschakelen"))
+    status, body = request("POST", "/api/shutdown", raw=raw)
+    assert status == 400 and json.loads(body)["ok"] is False
