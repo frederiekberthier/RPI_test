@@ -63,7 +63,8 @@ stappenplan staat ook in de [README](../README.md#installeren-op-een-pi-stappenp
 | alleen-lezen bestandssysteem | nee | met `--readonly` |
 
 **Opties:** `--check` (alleen tonen), `--force` (alles opnieuw), `--readonly` (alleen `client`), `--skip-preflight`.
-Omgevingsvariabelen: `KIOSK_USER`, `WIFI_COUNTRY`, `ETH_IFACE`.
+Omgevingsvariabelen: `KIOSK_USER`, `WIFI_COUNTRY`, `ETH_IFACE`. Geef ze na `sudo` mee, bv. `sudo WIFI_COUNTRY=NL ./install.sh server`:
+`WIFI_COUNTRY=NL sudo ./install.sh server` werkt niet, want sudo gooit variabelen van je eigen shell weg.
 
 **Is de software al geïnstalleerd?** Het script bepaalt dat per onderdeel: pakketten via `dpkg-query`, de software via de
 `REVISION` die bij de installatie is vastgelegd, de dienst via `systemctl` en het IP-adres via NetworkManager. Draai je het script

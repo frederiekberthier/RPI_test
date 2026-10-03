@@ -14,7 +14,9 @@
 #   -h, --help        deze uitleg
 #
 # Omgevingsvariabelen: KIOSK_USER (gebruiker voor het scherm, standaard degene die sudo gebruikte),
-# WIFI_COUNTRY (standaard BE), ETH_IFACE (standaard eth0).
+# WIFI_COUNTRY (standaard BE), ETH_IFACE (standaard eth0). Geef ze NA sudo mee:
+#   sudo WIFI_COUNTRY=NL ./install.sh server
+# (WIFI_COUNTRY=NL sudo ./install.sh ... werkt niet: sudo gooit variabelen van je eigen shell weg.)
 #
 # Veilig om opnieuw uit te voeren: voor elk onderdeel wordt eerst gekeken of het er al staat, en alleen
 # wat ontbreekt of verouderd is wordt (opnieuw) gedaan. Het is een nieuwe versie van de software? Dan wordt
@@ -248,7 +250,7 @@ apply_blanking() {
 
 check_kiosk() {
   if [ -z "$KIOSK_HOME" ]; then
-    DETAIL="geen gebruiker bekend (geef KIOSK_USER=<naam> of start met sudo vanuit je gebruiker)"
+    DETAIL="geen gebruiker bekend (start met sudo vanuit je gebruiker, of geef: sudo KIOSK_USER=<naam> ./install.sh ...)"
     return 2
   fi
   # cmp geeft 2 terug als een bestand ontbreekt; voor ons is dat gewoon "ontbreekt" (1)
@@ -257,7 +259,7 @@ check_kiosk() {
 }
 
 apply_kiosk() {
-  [ -n "$KIOSK_HOME" ] || { warn "geen gebruiker voor het scherm: start met sudo vanuit je gebruiker, of geef KIOSK_USER=<naam>"; return 1; }
+  [ -n "$KIOSK_HOME" ] || { warn "geen gebruiker voor het scherm: start met sudo vanuit je gebruiker, of geef: sudo KIOSK_USER=<naam> ./install.sh ..."; return 1; }
   mkdir -p "$APP_DIR" || return 1
   install -m 0755 "$IMAGE_DIR/kiosk.sh" "$APP_DIR/kiosk.sh" || return 1
   # Beide mappen met de juiste eigenaar aanmaken: bestond ~/.config nog niet, dan werd hij als root aangemaakt

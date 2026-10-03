@@ -109,7 +109,7 @@ De tests starten daarna vanzelf: de TEST-SERVER toont het scherm met de startkno
 | `bt.transmit` | TEST-CLIENT is zichtbaar, TEST-SERVER moet hem zien | |
 
 Aandachtspunten:
-- **Wifi-land** staat op beide Pi's op `BE` (door `install.sh`; ander land met `WIFI_COUNTRY=<code>`). Zonder land
+- **Wifi-land** staat op beide Pi's op `BE` (door `install.sh`; ander land met `sudo WIFI_COUNTRY=<code> ./install.sh server`). Zonder land
   kan het accesspoint op 5 GHz niet starten.
 - **De TEST-SERVER gebruikt zijn wifi als accesspoint**, en zijn ethernetpoort voor de TEST-CLIENT. Beheer van
   de TEST-SERVER gebeurt dus met toetsenbord en scherm, of met een extra USB-ethernetadapter.
@@ -130,11 +130,13 @@ poorten), twee mogen USB 2 zijn. Ze moeten naast elkaar in de gestapelde poorten
 smalle sticks of korte USB-verlengkabels, bevestigd in een blok of plank zodat de TEST-CLIENT er telkens
 op dezelfde manier aan gekoppeld wordt.
 
-**Sticks voorbereiden** (op een Linux-pc of de TEST-SERVER, één keer per stick):
+**Sticks voorbereiden** (op de TEST-SERVER of een Linux-pc, één keer per stick). Op de TEST-SERVER staat de software
+na `install.sh` in `/opt/rpitest/venv`; op een andere pc installeer je ze eerst met `pip install -e .` en laat je het
+pad weg (`sudo python -m rpitest.usbtools ...`, of `sudo "$(which python)" -m rpitest.usbtools ...` in een venv):
 ```
-sudo .venv/bin/python -m rpitest.usbtools scan                              # welk /dev/sdX is mijn stick?
-sudo .venv/bin/python -m rpitest.usbtools prepare /dev/sdX --label SLOT1    # toont wat er gewist wordt
-sudo .venv/bin/python -m rpitest.usbtools prepare /dev/sdX --label SLOT1 --yes
+sudo /opt/rpitest/venv/bin/python -m rpitest.usbtools scan                              # welk /dev/sdX is mijn stick?
+sudo /opt/rpitest/venv/bin/python -m rpitest.usbtools prepare /dev/sdX --label SLOT1    # toont wat er gewist wordt
+sudo /opt/rpitest/venv/bin/python -m rpitest.usbtools prepare /dev/sdX --label SLOT1 --yes
 ```
 Gebruik `SLOT1` en `SLOT2` voor de USB 3-sticks in de blauwe poorten, `SLOT3` en `SLOT4` voor de
 USB 2-poorten. **`prepare` overschrijft sector 0 (partitietabel) van de stick.** Gebruik hem alleen op

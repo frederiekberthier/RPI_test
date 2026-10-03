@@ -190,3 +190,18 @@ def test_diagnose_runs_the_same_commands_the_tests_parse():
                     "ping -c 3 -i 0.2 -q -W 1", "lsblk", "ls -l /sys/block/", "dmesg", "--list-chips",
                     "/sys/class/thermal/thermal_zone0/temp", "journalctl -u rpitest-ui"):
         assert command in text, command
+
+
+def test_environment_variables_are_documented_after_sudo_not_before():
+    # issue #28: `VAR=x sudo ...` wordt door sudo weggegooid; overal moet `sudo VAR=x ...` staan
+    for path in [INSTALL, *IMAGE.glob("*.sh"), *(INSTALL.parent / "docs").glob("*.md"), INSTALL.parent / "README.md"]:
+        text = path.read_text(encoding="utf-8")
+        advice = "\n".join(line for line in text.splitlines() if "werkt niet" not in line)  # het foute voorbeeld mag als waarschuwing
+        assert not re.search(r"\b(WIFI_COUNTRY|ETH_IFACE|KIOSK_USER)=\S+ sudo\b", advice), path
+        assert not re.search(r"geef \w*\s*(ETH_IFACE|KIOSK_USER|WIFI_COUNTRY)=<", text), path
+
+
+def test_the_usb_stick_commands_use_the_server_venv():
+    # issue #29: een `.venv` in de repo bestaat na install.sh niet
+    text = (INSTALL.parent / "docs" / "opstelling.md").read_text(encoding="utf-8")
+    assert ".venv/bin/python" not in text and "/opt/rpitest/venv/bin/python -m rpitest.usbtools prepare" in text

@@ -61,7 +61,7 @@ echo "Netwerk"
 if [ -e "$SYS_ROOT/sys/class/net/$ETH_IFACE" ]; then
   pass "ethernetpoort $ETH_IFACE aanwezig"
 else
-  fail "ethernetpoort $ETH_IFACE niet gevonden; geef de juiste naam met ETH_IFACE=<naam>"
+  fail "ethernetpoort $ETH_IFACE niet gevonden; geef de juiste naam met: sudo ETH_IFACE=<naam> ./install.sh ..."
 fi
 for host in deb.debian.org archive.raspberrypi.com; do
   if http_reachable "https://$host/"; then
@@ -104,7 +104,7 @@ if [ "$ROLE" = server ]; then
   if [ -n "$kiosk_user" ] && id "$kiosk_user" >/dev/null 2>&1; then
     pass "gebruiker voor het scherm: $kiosk_user"
   else
-    note "nog geen gebruiker voor het scherm bekend: start de installatie met sudo vanuit je gebruiker, of geef KIOSK_USER=<naam>"
+    note "nog geen gebruiker voor het scherm bekend: start de installatie met sudo vanuit je gebruiker, of geef: sudo KIOSK_USER=<naam> ./install.sh ..."
   fi
   if ls "$SYS_ROOT"/sys/class/net/*/wireless >/dev/null 2>&1 || ls "$SYS_ROOT"/sys/class/net/*/phy80211 >/dev/null 2>&1; then
     pass "wifi-interface aanwezig (nodig voor het accesspoint)"
