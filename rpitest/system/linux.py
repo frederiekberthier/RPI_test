@@ -28,10 +28,16 @@ class ShellResult:
     stderr: str = ""
 
 
+def tool_env() -> dict[str, str]:
+    """Omgeving voor opdrachten waarvan we de uitvoer lezen: vaste taal (de parsers zoeken Engelse tekst)."""
+    return {**os.environ, "LC_ALL": "C", "LANG": "C"}
+
+
 class Shell:
     def run(self, argv: list[str], timeout: float = 30) -> ShellResult:
         try:
-            p = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=timeout)
+            p = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=timeout,
+                               env=tool_env(), stdin=subprocess.DEVNULL)
         except FileNotFoundError:
             return ShellResult(127, "", f"{argv[0]}: niet gevonden (pakket niet geinstalleerd?)")
         except subprocess.TimeoutExpired as exc:
@@ -42,7 +48,7 @@ class Shell:
 
 def _read(path: Path) -> str | None:
     try:
-        return path.read_text().strip()
+        return path.read_text(encoding="utf-8", errors="replace").strip()  # vrije tekst van apparaten kan ongeldig zijn
     except OSError:
         return None
 
@@ -134,6 +140,14 @@ class LinuxOps(SystemOps):
             raise OpsError(f"{' '.join(argv[:3])} faalde ({result.returncode}): {detail}")
         return result
 
+    def _output(self, result: ShellResult, argv: list[str]) -> str:
+        """De uitvoer van een opdracht die ook bij 'geen resultaat' een afsluitcode kan geven (ping, iperf3): zonder
+        uitvoer is de afsluitcode en de foutmelding het enige dat we weten, en die tonen we."""
+        if result.returncode != 0 and not result.stdout.strip():
+            detail = result.stderr.strip()[:300] or "geen uitvoer"
+            raise OpsError(f"{argv[0]} faalde ({result.returncode}): {detail}")
+        return result.stdout
+
     def _addresses(self) -> dict[str, str]:
         return parsers.parse_ip_addresses(self._run(["ip", "-4", "-o", "addr", "show"], check=False).stdout)
 
@@ -170,18 +184,16 @@ class LinuxOps(SystemOps):
         }
 
     def ping(self, host: str, count: int) -> dict:
-        result = self._run(["ping", "-c", str(count), "-i", "0.2", "-q", "-W", "1", host],
-                           timeout=count * 1.3 + 10, check=False)
-        if result.returncode == 127:
-            raise OpsError(result.stderr)
-        return parsers.parse_ping(result.stdout)
+        argv = ["ping", "-c", str(count), "-i", "0.2", "-q", "-W", "1", host]
+        result = self._run(argv, timeout=count * 1.3 + 10, check=False)
+        return parsers.parse_ping(self._output(result, argv))  # 100% verlies geeft afsluitcode 1 mét statistiek
 
     def iperf3_server_start(self) -> None:
         self.iperf3_server_stop()
         try:
             self._iperf_server = subprocess.Popen(
                 ["iperf3", "-s", "-p", str(config.IPERF_PORT)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, env=tool_env())
         except FileNotFoundError as exc:
             raise OpsError("iperf3 niet gevonden (sudo apt install iperf3)") from exc
         time.sleep(0.5)
@@ -204,9 +216,7 @@ class LinuxOps(SystemOps):
         if reverse:
             argv.append("-R")
         result = self._run(argv, timeout=seconds + 15, check=False)
-        if result.returncode == 127:
-            raise OpsError(result.stderr)
-        return parsers.parse_iperf3(result.stdout)
+        return parsers.parse_iperf3(self._output(result, argv))  # een JSON-fout van iperf3 zelf leest de parser
 
     # --- wifi ---
     def wifi_info(self) -> dict:
@@ -230,7 +240,10 @@ class LinuxOps(SystemOps):
 
     def wifi_link(self) -> dict:
         iface = self._wlan()
-        link = parsers.parse_iw_link(self._run(["iw", "dev", iface, "link"], check=False).stdout)
+        result = self._run(["iw", "dev", iface, "link"], check=False)
+        if result.returncode != 0 and "Not connected" not in result.stdout + result.stderr:
+            raise OpsError(f"iw dev {iface} link faalde ({result.returncode}): {(result.stderr or result.stdout).strip()[:300]}")
+        link = parsers.parse_iw_link(result.stdout)
         link["ip"] = self._ip_of(iface)
         return link
 
@@ -261,8 +274,10 @@ class LinuxOps(SystemOps):
             self._run(["bluetoothctl", "remove", forget_mac], check=False)
         result = self._run(["bluetoothctl", "--timeout", str(seconds), "scan", "on"],
                            timeout=seconds + 15, check=False)
-        if result.returncode == 127:
-            raise OpsError(result.stderr)
+        # De afsluitcode na de time-out is niet betrouwbaar; "Discovery started" bewijst dat het scannen begon
+        if result.returncode != 0 and "Discovery started" not in result.stdout:
+            detail = (result.stderr or result.stdout).strip()[:300] or "geen uitvoer"
+            raise OpsError(f"bluetoothctl scan faalde ({result.returncode}): {detail}")
         return parsers.parse_bluetooth_scan(result.stdout)
 
     def bt_discoverable(self, enabled: bool) -> None:
@@ -274,7 +289,7 @@ class LinuxOps(SystemOps):
             return
         try:
             self._bt_proc = subprocess.Popen(["bluetoothctl"], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                                             stderr=subprocess.DEVNULL, text=True)
+                                             stderr=subprocess.DEVNULL, text=True, env=tool_env())
         except FileNotFoundError as exc:
             raise OpsError("bluetoothctl niet gevonden (sudo apt install bluez)") from exc
         self._send_bt("power on\npairable off\ndiscoverable on\n")

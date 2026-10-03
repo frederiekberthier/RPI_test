@@ -173,3 +173,75 @@ def test_ip_address_parser():
     from rpitest.system.parsers import parse_ip_addresses
     text = "2: eth0    inet 192.168.77.2/24 brd 192.168.77.255 scope global eth0\n3: wlan0    inet 10.42.0.5/24 scope global\n"
     assert parse_ip_addresses(text) == {"eth0": "192.168.77.2", "wlan0": "10.42.0.5"}
+
+
+# ---------------------------------------------------------------- issue #11: de fout van een falende tool blijft zichtbaar
+
+def test_a_failing_ping_reports_its_error_instead_of_unreadable_output(tmp_path):
+    shell = FakeShell([(("ping",), ShellResult(2, "", "ping: connect: Network is unreachable"))])
+    with pytest.raises(OpsError, match="Network is unreachable"):
+        LinuxOps(shell, tmp_path).ping("192.168.77.2", 5)
+
+
+def test_a_ping_with_total_loss_is_still_a_result_not_an_error(tmp_path):
+    out = "5 packets transmitted, 0 received, 100% packet loss, time 800ms\n"
+    result = LinuxOps(FakeShell([(("ping",), ShellResult(1, out))]), tmp_path).ping("192.168.77.2", 5)
+    assert result["loss_pct"] == 100.0
+
+
+def test_a_failing_iperf3_reports_its_error(tmp_path):
+    shell = FakeShell([(("iperf3",), ShellResult(1, "", "iperf3: error - unable to connect to server"))])
+    with pytest.raises(OpsError, match="unable to connect"):
+        LinuxOps(shell, tmp_path).iperf3_client("192.168.77.2", 5, reverse=False)
+
+
+def test_iw_link_on_a_missing_device_is_an_error_but_not_connected_is_a_result(tmp_path):
+    make_sys(tmp_path)
+    shell = FakeShell([(("iw",), ShellResult(1, "", "command failed: No such device (-19)")), (("ip",), ShellResult(0))])
+    with pytest.raises(OpsError, match="No such device"):
+        LinuxOps(shell, tmp_path).wifi_link()
+    shell = FakeShell([(("iw",), ShellResult(0, "Not connected.\n")), (("ip",), ShellResult(0))])
+    assert LinuxOps(shell, tmp_path).wifi_link()["connected"] is False
+    shell = FakeShell([(("iw",), ShellResult(1, "Not connected.\n")), (("ip",), ShellResult(0))])
+    assert LinuxOps(shell, tmp_path).wifi_link()["connected"] is False
+
+
+def test_a_bluetooth_scan_that_never_started_is_an_error_not_an_empty_list(tmp_path):
+    shell = FakeShell([(("bluetoothctl",), ShellResult(1, "", "No default controller available"))])
+    with pytest.raises(OpsError, match="No default controller"):
+        LinuxOps(shell, tmp_path).bt_scan(5)
+    started = "Discovery started\n[NEW] Device DC:A6:32:00:00:01 pi\n"  # een afsluitcode bij de time-out is geen fout
+    found = LinuxOps(FakeShell([(("bluetoothctl",), ShellResult(1, started))]), tmp_path).bt_scan(5)
+    assert [d["address"] for d in found] == ["DC:A6:32:00:00:01"]
+    assert LinuxOps(FakeShell([(("bluetoothctl",), ShellResult(0, "Discovery started\n"))]), tmp_path).bt_scan(5) == []
+
+
+# ---------------------------------------------------------------- issue #12: vaste taal en geen invoer
+
+def test_shell_runs_tools_in_the_c_locale_without_stdin(monkeypatch):
+    import sys
+    from rpitest.system.linux import Shell
+    monkeypatch.setenv("LC_ALL", "nl_BE.UTF-8")
+    monkeypatch.setenv("LANG", "nl_BE.UTF-8")
+    code = "import os, sys; print(os.environ.get('LC_ALL'), os.environ.get('LANG'), repr(sys.stdin.read()))"
+    result = Shell().run([sys.executable, "-c", code])
+    assert result.stdout.split() == ["C", "C", "''"], result
+
+
+# ---------------------------------------------------------------- issue #13: vreemde bytes in sysfs
+
+def test_usb_scan_survives_undecodable_descriptor_strings(tmp_path, monkeypatch):
+    from pathlib import Path
+    original = Path.read_text
+
+    def strict_utf8(self, encoding=None, errors=None):  # zoals de Pi: standaard strikt UTF-8 (op Windows is dat cp1252)
+        return original(self, encoding=encoding or "utf-8", errors=errors)
+    monkeypatch.setattr(Path, "read_text", strict_utf8)
+    device = tmp_path / "sys/bus/usb/devices/1-1"
+    device.mkdir(parents=True)
+    (device / "idVendor").write_text("0781\n")
+    (device / "idProduct").write_text("5567\n")
+    (device / "serial").write_bytes(b"AB\xed\xa0\x80CD\n")
+    (device / "product").write_bytes(b"Cruzer \xff Blade\n")
+    devices = LinuxOps(FakeShell([]), tmp_path).usb_scan()
+    assert devices[0]["vid"] == "0781" and devices[0]["serial"].startswith("AB") and "Cruzer" in devices[0]["product"]
