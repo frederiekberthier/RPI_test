@@ -97,21 +97,30 @@ MISSING_PACKAGES=()
 APP_CHANGED=0
 UNIT_RESTARTED=0
 
+MISSING_OPTIONAL=()
+
 check_packages() {
   MISSING_PACKAGES=()
+  MISSING_OPTIONAL=()
   local pkg
-  for pkg in "${PACKAGES[@]}" "${OPTIONAL_PACKAGES[@]}"; do
+  for pkg in "${PACKAGES[@]}"; do
     package_installed "$pkg" || MISSING_PACKAGES+=("$pkg")
   done
+  for pkg in "${OPTIONAL_PACKAGES[@]}"; do
+    package_installed "$pkg" || MISSING_OPTIONAL+=("$pkg")
+  done
   if [ "${#MISSING_PACKAGES[@]}" -gt 0 ]; then
-    DETAIL="ontbreken: ${MISSING_PACKAGES[*]}"
+    DETAIL="ontbreken: ${MISSING_PACKAGES[*]} ${MISSING_OPTIONAL[*]}"
     return 1
   fi
-  DETAIL="alle $((${#PACKAGES[@]} + ${#OPTIONAL_PACKAGES[@]})) aanwezig"
+  # Een ontbrekend optioneel pakket telt niet mee: het wordt bij een installatie wel geprobeerd, maar als
+  # het niet te installeren is mag het onderdeel niet bij elke run opnieuw 'ontbreekt' blijven geven.
+  DETAIL="alle $((${#PACKAGES[@]})) aanwezig"
+  [ "${#MISSING_OPTIONAL[@]}" -eq 0 ] || DETAIL="$DETAIL; optioneel ontbreekt: ${MISSING_OPTIONAL[*]}"
 }
 
 apply_packages() {
-  local list=("${MISSING_PACKAGES[@]}")
+  local list=("${MISSING_PACKAGES[@]}" "${MISSING_OPTIONAL[@]}")
   [ "$FORCE" -eq 1 ] && list=("${PACKAGES[@]}" "${OPTIONAL_PACKAGES[@]}")
   [ "${#list[@]}" -gt 0 ] || return 0
   apt-get update || return 1

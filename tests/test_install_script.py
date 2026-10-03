@@ -482,3 +482,25 @@ def test_an_existing_custom_autostart_is_backed_up_once(box):
     assert "kiosk.sh" in autostart.read_text()
     box.run("server", "--skip-preflight", "--force")  # opnieuw toepassen mag de back-up niet overschrijven
     assert backup.read_text() == "mijn-eigen-paneel &\n"
+
+
+# ---------------------------------------------------------------- issue #26: optioneel pakket
+
+def test_an_optional_package_that_cannot_be_installed_does_not_keep_the_pi_in_the_missing_state(box):
+    first = box.run("server", "--skip-preflight", FAIL_PACKAGE="libraspberrypi-bin")
+    assert first.returncode == 0, first.clean
+    second = box.run("server", "--skip-preflight")
+    assert second.returncode == 0 and "niets te doen" in second.clean, second.clean
+    check = box.run("server", "--check")
+    assert check.returncode == 0 and "optioneel" in check.clean and "libraspberrypi-bin" in check.clean
+
+
+def test_a_missing_optional_package_is_still_tried_during_a_normal_install(box):
+    box.run("server", "--skip-preflight")
+    assert "libraspberrypi-bin" in (box.state / "dpkg").read_text()
+
+
+def test_missing_required_packages_still_fail_the_check(box):
+    box.install_packages(*[p for p in box.packages if p != "iperf3"])
+    result = box.run("server", "--check")
+    assert result.returncode == 3 and "ontbreken: iperf3" in result.clean
