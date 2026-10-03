@@ -58,6 +58,8 @@ Lukt de natest of het scherm niet, ga dan naar stap 5 en stuur de diagnose.
    sudo reboot
    sudo ./image/verify.sh client        # na de herstart
    ```
+   Zonder testkabel is het vaste adres er nog niet: de agent wacht dan (de dienst blijft `active`) en `verify.sh` meldt een
+   `[let op]` dat de agent niet antwoordt. Dat is hier normaal; het wordt `[ok]` zodra de kabel aangesloten is.
    Gebruik **nog geen** `--readonly`: dat doe je pas als alles werkt (stap 6), want daarna zijn wijzigingen weg.
 4. Haal de SD uit de TEST-CLIENT en bewaar hem als je TEST-CLIENT-SD.
 

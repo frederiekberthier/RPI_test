@@ -109,7 +109,7 @@ Elk rapport is een zelfstandige HTML-pagina (`report-<serienummer>-<tijd>.html`)
 | Symptoom | Kijk naar |
 |---|---|
 | Scherm blijft zwart of toont een foutpagina | `systemctl status rpitest-ui`; draait het bureaublad met automatisch inloggen (`raspi-config`)? Test lokaal: `curl http://127.0.0.1:8080/api/state` |
-| "Wachten op de TEST-CLIENT" blijft staan | Op de TEST-CLIENT: `systemctl status rpitest-agent`; de netwerkkabel (rechtstreeks, geen switch); `ip addr` op beide Pi's; `curl http://192.168.77.2:8765` vanaf de TEST-SERVER geeft een antwoord als de agent draait |
+| "Wachten op de TEST-CLIENT" blijft staan | Op de TEST-CLIENT: `systemctl status rpitest-agent` (zonder kabel wacht de agent tot het vaste adres bestaat: `journalctl -u rpitest-agent`); de netwerkkabel (rechtstreeks, geen switch); `ip addr` op beide Pi's; `curl http://192.168.77.2:8765` vanaf de TEST-SERVER geeft een antwoord als de agent draait |
 | Test faalt met "GPIO-lijnen in gebruik" | I2C, SPI of de seriële console staan aan, of er draait nog een andere `rpitest`; herstart de dienst |
 | Alles geeft FAIL na een bedradingsfout | Voer de zelftest uit met een bekend goede Pi (zie `docs/opstelling.md`) |
 | Browser start niet | `journalctl --user` en `ls ~/.config/labwc/autostart`; controleer de naam van het Chromium-programma (`chromium` of `chromium-browser`) |
