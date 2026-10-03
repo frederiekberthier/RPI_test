@@ -153,3 +153,13 @@ def test_only_busy_pins_are_named_when_some_pins_are_busy(system):
         real.GpiodPort(gpiod=system.module())
     message = str(exc.value)
     assert "14, 15" in message and "2," not in message
+
+
+@pytest.mark.parametrize("mem_total_kb,expected_mb", [
+    (416000, 512),      # 512 MB-bord: geen minimum van 1 GB afdwingen (issue #15)
+    (206000, 256),
+    (949000, 1024), (1900000, 2048), (3900000, 4096), (8210000, 8192), (16200000, 16384),
+])
+def test_nominal_ram_is_not_forced_up_to_one_gigabyte(mem_total_kb, expected_mb):
+    from rpitest.sysinfo import _nominal_ram_mb
+    assert _nominal_ram_mb(mem_total_kb) == expected_mb

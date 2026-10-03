@@ -204,12 +204,17 @@ class LinuxOps(SystemOps):
 
     def iperf3_server_stop(self) -> None:
         proc, self._iperf_server = self._iperf_server, None
-        if proc is not None and proc.poll() is None:
+        if proc is None:
+            return
+        if proc.poll() is None:
             proc.terminate()
             try:
                 proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 proc.kill()
+                proc.wait()  # anders blijft het een zombie
+        if proc.stderr is not None:
+            proc.stderr.close()
 
     def iperf3_client(self, host: str, seconds: int, reverse: bool) -> dict:
         argv = ["iperf3", "-c", host, "-p", str(config.IPERF_PORT), "-t", str(seconds), "-J"]
@@ -426,7 +431,9 @@ class LinuxOps(SystemOps):
 
     def close(self) -> None:
         """Ruim alles op wat deze instantie gestart heeft (aanroepen bij afsluiten)."""
-        for step in (self.stress_stop, self.iperf3_server_stop, lambda: self.bt_discoverable(False)):
+        steps = (self.stress_stop, self.iperf3_server_stop, lambda: self.bt_discoverable(False),
+                 self.wifi_hotspot_stop, self.wifi_forget)  # ook de hotspot en het wifi-profiel van een afgebroken test
+        for step in steps:
             try:
                 step()
             except Exception:

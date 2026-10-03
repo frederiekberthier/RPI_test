@@ -347,3 +347,38 @@ def test_a_failed_connection_shows_as_failed(tmp_path):
 def test_failure_wins_over_warning_in_the_same_group(tmp_path):
     c = make_controller(tmp_path, make_context=mock_factory("wifi_weak", "wifi_5g_dead"))
     assert group_status(run_to_end(c))["wifi"] == "fout"
+
+
+# ---------------------------------------------------------------- issue #16: opruimen vóór 'done'
+
+def test_the_phase_stays_running_until_the_cleanup_is_finished(tmp_path):
+    seen = []
+
+    def make():
+        ctx, _ = factory.mock_context([])
+        c_ref = holder["c"]
+
+        def close():
+            seen.append(c_ref.state()["phase"])
+            seen.append(c_ref.reset()[0])   # een nieuwe test mag nog niet kunnen tijdens het opruimen
+            seen.append(c_ref.start()[0])
+        return ctx, close
+
+    holder = {}
+    c = make_controller(tmp_path, make_context=make)
+    holder["c"] = c
+    s = run_to_end(c)
+    assert seen == ["running", False, False]
+    assert s["phase"] == "done"
+
+
+def test_a_crash_during_cleanup_still_ends_in_done(tmp_path):
+    def make():
+        ctx, _ = factory.mock_context([])
+
+        def close():
+            raise RuntimeError("opruimen faalt")
+        return ctx, close
+
+    s = run_to_end(make_controller(tmp_path, make_context=make))
+    assert s["phase"] == "done" and s["last"]["html"] is not None

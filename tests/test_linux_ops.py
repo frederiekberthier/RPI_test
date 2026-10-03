@@ -245,3 +245,41 @@ def test_usb_scan_survives_undecodable_descriptor_strings(tmp_path, monkeypatch)
     (device / "product").write_bytes(b"Cruzer \xff Blade\n")
     devices = LinuxOps(FakeShell([]), tmp_path).usb_scan()
     assert devices[0]["vid"] == "0781" and devices[0]["serial"].startswith("AB") and "Cruzer" in devices[0]["product"]
+
+
+# ---------------------------------------------------------------- issue #14: opruimen
+
+def test_close_also_removes_the_hotspot_and_the_wifi_profile(tmp_path):
+    make_sys(tmp_path)
+    shell = FakeShell([(("nmcli",), ShellResult(0))])
+    LinuxOps(shell, tmp_path).close()
+    deleted = [c[-1] for c in shell.calls if c[:3] == ["nmcli", "connection", "delete"]]
+    assert config.WIFI_AP_PROFILE in deleted and config.WIFI_PROFILE in deleted
+
+
+def test_close_keeps_going_when_one_step_fails(tmp_path):
+    ops = LinuxOps(FakeShell([]), tmp_path)
+
+    def boom():
+        raise OpsError("kapot")
+    ops.stress_stop = boom
+    ops.close()  # mag niet crashen
+
+
+def test_a_killed_iperf3_server_is_reaped_and_its_pipe_closed(tmp_path):
+    import subprocess
+    import sys
+    ops = LinuxOps(FakeShell([]), tmp_path)
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stderr=subprocess.PIPE, text=True)
+    # een proces dat SIGTERM/terminate negeert is op Windows niet na te bootsen; kill-pad direct afdwingen
+    proc.terminate = lambda: None
+    ops._iperf_server = proc
+    original_wait = proc.wait
+
+    def slow_wait(timeout=None):
+        if timeout is not None:
+            raise subprocess.TimeoutExpired("x", timeout)
+        return original_wait()
+    proc.wait = slow_wait
+    ops.iperf3_server_stop()
+    assert proc.poll() is not None and proc.stderr.closed

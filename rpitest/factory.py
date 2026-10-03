@@ -56,7 +56,7 @@ def real_context(client_url: str, gpio_chip: str | None = None,
     ctx = Context(port, RemoteGpioPort(client), client, pi_info(), ops, usb_slots)
 
     def close() -> None:
-        ops.close()  # stopt hotspot-resten, iperf3, zichtbaarheid
+        ops.close()  # stopt belasting, iperf3, bluetooth-zichtbaarheid, hotspot en wifi-profiel
         port.close()
 
     return ctx, close

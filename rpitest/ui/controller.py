@@ -113,22 +113,31 @@ class Controller:
     # ---------------------------------------------------------------- de run zelf
     def _execute(self) -> None:
         close = None
+        report: Report | None = None
+        error: Exception | None = None
         try:
             ctx, close = self._make_context()
             report = run_all(ctx, self._groups, _RunProgress(self))
-            self._finish(report)
         except Exception as exc:  # bv. GPIO niet te openen: toon het op het scherm
-            with self._lock:
-                self._close_current("fout")
-                self._run["error"] = f"{type(exc).__name__}: {exc}"
-                self._last = {"overall": "FAIL", "html": None, "error": self._run["error"]}
-                self._phase = "done"
+            error = exc
         finally:
+            # eerst opruimen (stress, iperf3, bluetooth, GPIO), pas daarna mag de operator een nieuwe test starten
             if close is not None:
                 try:
                     close()
                 except Exception:
                     pass
+        if error is None:
+            try:
+                self._finish(report)
+            except Exception as exc:  # bv. het rapport kan niet worden opgeslagen
+                error = exc
+        if error is not None:
+            with self._lock:
+                self._close_current("fout")
+                self._run["error"] = f"{type(error).__name__}: {error}"
+                self._last = {"overall": "FAIL", "html": None, "error": self._run["error"]}
+                self._phase = "done"
 
     def _finish(self, report: Report) -> None:
         _, html_path = report_mod.save(report, self._reports_dir)
