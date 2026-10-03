@@ -15,8 +15,8 @@
 #
 # Omgevingsvariabelen: KIOSK_USER (gebruiker voor het scherm, standaard degene die sudo gebruikte),
 # WIFI_COUNTRY (standaard BE), ETH_IFACE (standaard eth0). Geef ze NA sudo mee:
-#   sudo WIFI_COUNTRY=NL ./install.sh server
-# (WIFI_COUNTRY=NL sudo ./install.sh ... werkt niet: sudo gooit variabelen van je eigen shell weg.)
+#   sudo WIFI_COUNTRY=DE ./install.sh server   # alleen nodig buiten België: de standaard is BE
+# (WIFI_COUNTRY=DE sudo ./install.sh ... werkt niet: sudo gooit variabelen van je eigen shell weg.)
 #
 # Veilig om opnieuw uit te voeren: voor elk onderdeel wordt eerst gekeken of het er al staat, en alleen
 # wat ontbreekt of verouderd is wordt (opnieuw) gedaan. Het is een nieuwe versie van de software? Dan wordt
