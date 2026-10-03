@@ -122,7 +122,8 @@ def test_reset_goes_back_to_idle_and_allows_a_new_run(tmp_path):
     s = c.state()
     assert s["phase"] == "idle" and s["results"] == [] and s["last"] is None
     assert run_to_end(c)["phase"] == "done"
-    assert len(c.state()["history"]) == 2 or len(list(tmp_path.glob("report-*.json"))) >= 1
+    assert len(c.state()["history"]) == 2 and len(list(tmp_path.glob("report-*.json"))) == 2
+    assert len(list(tmp_path.glob("report-*.html"))) == 2  # twee runs binnen één seconde overschrijven elkaar niet
 
 
 def test_context_error_is_shown_instead_of_crashing(tmp_path):
@@ -224,13 +225,26 @@ def test_start_over_http_then_report_is_downloadable(web):
 
 
 @pytest.mark.parametrize("path", [
-    "/reports/../pyproject.toml", "/reports/..%2Fpyproject.toml", "/reports/%2e%2e/x", "/reports/secret.html",
-    "/reports/report-.html/..", "/reports/", "/reports/report-x.exe", "/nietbestaand",
+    # deze bestaan echt (naast de rapportmap), dus alleen een echte controle houdt ze tegen
+    "/reports/../secret.html", "/reports/..%2Fsecret.html", "/reports/%2e%2e/secret.html", "/reports/..\\secret.html",
+    "/reports/../report-geheim.html", "/reports/..%2Freport-geheim.json", "/reports/%2e%2e%2freport-geheim.html",
+    # en gewone weigeringen
+    "/reports/secret.html", "/reports/report-.html/..", "/reports/", "/reports/report-x.exe", "/nietbestaand",
 ])
 def test_report_route_cannot_leave_the_reports_folder(web, path):
     _, request, tmp_path = web
     (tmp_path.parent / "secret.html").write_text("geheim")
-    assert request("GET", path)[0] == 404
+    (tmp_path.parent / "report-geheim.html").write_text("geheim")
+    (tmp_path.parent / "report-geheim.json").write_text("geheim")
+    status, body = request("GET", path)
+    assert status == 404 and b"geheim" not in body
+
+
+def test_report_route_serves_a_valid_name(web):
+    _, request, tmp_path = web
+    (tmp_path / "report-ok-1.html").write_text("<p>zichtbaar</p>")
+    status, body = request("GET", "/reports/report-ok-1.html")
+    assert status == 200 and b"zichtbaar" in body
 
 
 def test_foreign_host_header_is_refused(web):
