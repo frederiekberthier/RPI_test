@@ -23,9 +23,8 @@ def _cpuinfo_field(cpuinfo: str | None, key: str) -> str | None:
 
 
 def _nominal_ram_mb(mem_total_kb: int) -> int:
-    """MemTotal is iets lager dan het echte geheugen; rond af naar 1/2/4/8/16 GB."""
-    gb = max(1, math.ceil(mem_total_kb / 1024 / 1024))
-    return 2 ** math.ceil(math.log2(gb)) * 1024
+    """MemTotal is iets lager dan het echte geheugen; rond af naar een macht van twee (256 MB, 512 MB, 1/2/4/8/16 GB)."""
+    return max(256, 2 ** math.ceil(math.log2(mem_total_kb / 1024)))
 
 
 def pi_info(root: Path = Path("/")) -> dict:

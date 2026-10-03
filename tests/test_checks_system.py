@@ -13,11 +13,6 @@ from rpitest.system import mock as sysmock
 INFO = {"model": "Raspberry Pi 5 (mock)", "ram_mb": 8192, "serial": "MOCK0001"}
 
 
-@pytest.fixture(autouse=True)
-def no_sleep(monkeypatch):
-    monkeypatch.setattr("rpitest.checks.wifi.time.sleep", lambda s: None)
-
-
 def make_ctx(*faults):
     env = sysmock.MockEnv(faults)
     wiring = MockWiring()
@@ -148,3 +143,64 @@ def test_full_run_over_http_with_slow_call_timeouts():
         assert run_all(ctx).overall == "PASS"
     finally:
         server.shutdown()
+
+
+# ---------------------------------------------------------------- issue #5: linksnelheid
+
+def test_a_100_mbit_link_is_judged_on_its_speed_and_blames_port_or_cable():
+    from rpitest.checks.network import check_link
+    both = check_link({"carrier": 1, "speed_mbit": 100}, {"speed_mbit": 100})
+    assert both.status is Status.FAIL and "100 Mb/s" in both.summary and "poort of kabel" in both.summary
+    # ook als de TEST-SERVER zijn snelheid niet kent telt de TEST-CLIENT
+    assert check_link({"carrier": 1, "speed_mbit": 100}, {}).status is Status.FAIL
+    assert check_link({"carrier": 1, "speed_mbit": 1000}, {"speed_mbit": 1000}).status is Status.PASS
+
+
+def test_the_mock_gives_both_sides_the_same_speed_for_a_slow_link():
+    _, env = make_ctx("eth_100")
+    assert env.ops(sysmock.CLIENT).net_iface_info()["speed_mbit"] == env.ops(sysmock.SERVER).net_iface_info()["speed_mbit"] == 100
+
+
+# ---------------------------------------------------------------- issue #6: fout aan de kant van de TEST-SERVER
+
+def _broken_server(monkeypatch, ctx, method, message="tool ontbreekt"):
+    from rpitest.system.ops import OpsError
+
+    def broken(*args, **kwargs):
+        raise OpsError(message)
+    monkeypatch.setattr(ctx.server_ops, method, broken)
+
+
+@pytest.mark.parametrize("method,skipped", [
+    ("iperf3_client", {"net.throughput", "net.errors"}),
+    ("ping", {"net.latency"}),
+    ("net_iface_info", {"net.link"}),
+    ("bt_scan", {"bt.transmit"}),
+    ("bt_discoverable", {"bt.receive"}),
+    ("bt_info", {"bt.controller"}),
+])
+def test_a_failing_tool_on_the_test_server_skips_instead_of_failing_the_client(monkeypatch, method, skipped):
+    ctx, _ = make_ctx()
+    _broken_server(monkeypatch, ctx, method)
+    results = {r.name: r for r in run_all(ctx).results}
+    for name in skipped:
+        assert results[name].status is Status.SKIP and "TEST-SERVER" in results[name].summary, name
+    assert not [r.name for r in results.values() if r.status is Status.FAIL and r.name.split(".")[0] in ("net", "bt")]
+
+
+def test_a_failing_tool_on_the_test_client_still_fails(monkeypatch):
+    from rpitest.agent.client import RpcError
+    ctx, _ = make_ctx()
+
+    def broken(*args, **kwargs):
+        raise RpcError("iperf3 stuk")
+    monkeypatch.setattr(ctx.client, "call", lambda method, **kw: broken() if method == "iperf3_server_start" else
+                        type(ctx.client).call(ctx.client, method, **kw))
+    assert statuses(ctx)["net.throughput"] is Status.FAIL
+
+
+def test_a_hotspot_ping_failure_on_the_test_server_skips_the_band(monkeypatch):
+    ctx, _ = make_ctx()
+    _broken_server(monkeypatch, ctx, "ping")
+    results = {r.name: r for r in run_all(ctx).results}
+    assert results["wifi.2.4GHz"].status is Status.SKIP and results["wifi.5GHz"].status is Status.SKIP

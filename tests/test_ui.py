@@ -122,7 +122,8 @@ def test_reset_goes_back_to_idle_and_allows_a_new_run(tmp_path):
     s = c.state()
     assert s["phase"] == "idle" and s["results"] == [] and s["last"] is None
     assert run_to_end(c)["phase"] == "done"
-    assert len(c.state()["history"]) == 2 or len(list(tmp_path.glob("report-*.json"))) >= 1
+    assert len(c.state()["history"]) == 2 and len(list(tmp_path.glob("report-*.json"))) == 2
+    assert len(list(tmp_path.glob("report-*.html"))) == 2  # twee runs binnen één seconde overschrijven elkaar niet
 
 
 def test_context_error_is_shown_instead_of_crashing(tmp_path):
@@ -179,11 +180,13 @@ def web(tmp_path):
     thread.start()
     port = srv.server_address[1]
 
-    def request(method, path, body=None, host=None, raw=None):
+    def request(method, path, body=None, host=None, raw=None, headers=None):
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
-        headers = {"Host": host} if host else {}
-        if body is not None or raw is not None:
-            headers["Content-Type"] = "application/json"
+        sent = {"Host": host} if host else {}
+        if method == "POST":
+            sent["Content-Type"] = "application/json"  # zoals de pagina; een test kan dat overschrijven
+        sent.update(headers or {})
+        headers = sent
         payload = raw if raw is not None else (json.dumps(body) if body is not None else None)
         conn.request(method, path, payload, headers)
         response = conn.getresponse()
@@ -191,6 +194,7 @@ def web(tmp_path):
         conn.close()
         return response.status, data
 
+    request.port = port
     yield controller, request, tmp_path
     srv.shutdown()
     srv.server_close()
@@ -221,13 +225,26 @@ def test_start_over_http_then_report_is_downloadable(web):
 
 
 @pytest.mark.parametrize("path", [
-    "/reports/../pyproject.toml", "/reports/..%2Fpyproject.toml", "/reports/%2e%2e/x", "/reports/secret.html",
-    "/reports/report-.html/..", "/reports/", "/reports/report-x.exe", "/nietbestaand",
+    # deze bestaan echt (naast de rapportmap), dus alleen een echte controle houdt ze tegen
+    "/reports/../secret.html", "/reports/..%2Fsecret.html", "/reports/%2e%2e/secret.html", "/reports/..\\secret.html",
+    "/reports/../report-geheim.html", "/reports/..%2Freport-geheim.json", "/reports/%2e%2e%2freport-geheim.html",
+    # en gewone weigeringen
+    "/reports/secret.html", "/reports/report-.html/..", "/reports/", "/reports/report-x.exe", "/nietbestaand",
 ])
 def test_report_route_cannot_leave_the_reports_folder(web, path):
     _, request, tmp_path = web
     (tmp_path.parent / "secret.html").write_text("geheim")
-    assert request("GET", path)[0] == 404
+    (tmp_path.parent / "report-geheim.html").write_text("geheim")
+    (tmp_path.parent / "report-geheim.json").write_text("geheim")
+    status, body = request("GET", path)
+    assert status == 404 and b"geheim" not in body
+
+
+def test_report_route_serves_a_valid_name(web):
+    _, request, tmp_path = web
+    (tmp_path / "report-ok-1.html").write_text("<p>zichtbaar</p>")
+    status, body = request("GET", "/reports/report-ok-1.html")
+    assert status == 200 and b"zichtbaar" in body
 
 
 def test_foreign_host_header_is_refused(web):
@@ -285,7 +302,7 @@ def test_shutdown_is_disabled_by_default(tmp_path, monkeypatch):
     monkeypatch.setattr(ui_server.subprocess, "Popen", lambda argv: pytest.fail("mag niet uitschakelen"))
     try:
         conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
-        conn.request("POST", "/api/shutdown", json.dumps({"confirm": True}))
+        conn.request("POST", "/api/shutdown", json.dumps({"confirm": True}), {"Content-Type": "application/json"})
         assert conn.getresponse().status == 403
     finally:
         srv.shutdown()
@@ -312,3 +329,109 @@ def test_report_filename_is_sanitised(tmp_path):
     report = Report({}, {"serial": "../../etc/passwd"}, [], "2026-10-03T10:00:00", "2026-10-03T10:01:00")
     json_path, html_path = report_mod.save(report, tmp_path / "rapporten")
     assert json_path.parent == tmp_path / "rapporten" and report_mod.REPORT_NAME.match(html_path.name)
+
+
+# ---------------------------------------------------------------- issue #19: groepsstatus bij FAIL en WARN
+
+def group_status(state):
+    return {g["key"]: g["status"] for g in state["groups"]}
+
+
+def test_a_failing_group_is_marked_as_failed_not_done(tmp_path):
+    c = make_controller(tmp_path, make_context=mock_factory("stuck_low:C:5"))
+    status = group_status(run_to_end(c))
+    assert status["gpio"] == "fout"
+    assert status["connect"] == "klaar" and status["usb"] == "klaar" and status["network"] == "klaar"
+
+
+def test_a_group_with_only_warnings_is_marked_as_warning(tmp_path):
+    c = make_controller(tmp_path, make_context=mock_factory("wifi_weak"))
+    status = group_status(run_to_end(c))
+    assert status["wifi"] == "waarschuwing" and status["gpio"] == "klaar"
+
+
+def test_a_failed_connection_shows_as_failed(tmp_path):
+    def unreachable():
+        client = RpcClient("http://127.0.0.1:9", timeout=0.3)
+        return Context(MockWiring().port(SERVER), RemoteGpioPort(client), client, {}), (lambda: None)
+
+    c = make_controller(tmp_path, make_context=unreachable)
+    status = group_status(run_to_end(c))
+    assert status["connect"] == "fout"
+    assert all(v == "overgeslagen" for k, v in status.items() if k != "connect")
+
+
+def test_failure_wins_over_warning_in_the_same_group(tmp_path):
+    c = make_controller(tmp_path, make_context=mock_factory("wifi_weak", "wifi_5g_dead"))
+    assert group_status(run_to_end(c))["wifi"] == "fout"
+
+
+# ---------------------------------------------------------------- issue #16: opruimen vóór 'done'
+
+def test_the_phase_stays_running_until_the_cleanup_is_finished(tmp_path):
+    seen = []
+
+    def make():
+        ctx, _ = factory.mock_context([])
+        c_ref = holder["c"]
+
+        def close():
+            seen.append(c_ref.state()["phase"])
+            seen.append(c_ref.reset()[0])   # een nieuwe test mag nog niet kunnen tijdens het opruimen
+            seen.append(c_ref.start()[0])
+        return ctx, close
+
+    holder = {}
+    c = make_controller(tmp_path, make_context=make)
+    holder["c"] = c
+    s = run_to_end(c)
+    assert seen == ["running", False, False]
+    assert s["phase"] == "done"
+
+
+def test_a_crash_during_cleanup_still_ends_in_done(tmp_path):
+    def make():
+        ctx, _ = factory.mock_context([])
+
+        def close():
+            raise RuntimeError("opruimen faalt")
+        return ctx, close
+
+    s = run_to_end(make_controller(tmp_path, make_context=make))
+    assert s["phase"] == "done" and s["last"]["html"] is not None
+
+
+# ---------------------------------------------------------------- issue #17 en #18: cross-site verzoeken en vreemde bodies
+
+def test_a_post_that_is_not_json_is_refused_without_side_effects(web):
+    controller, request, _ = web
+    status, _ = request("POST", "/api/start", raw=b"{}", headers={"Content-Type": "text/plain"})
+    assert status == 415 and controller.state()["phase"] == "idle"  # text/plain heeft geen CORS-preflight
+    assert request("POST", "/api/start", raw=b"{}", headers={"Content-Type": "application/x-www-form-urlencoded"})[0] == 415
+    status, _ = request("POST", "/api/start", raw=b"{}", headers={"Content-Type": "application/json; charset=utf-8"})
+    assert status == 200
+
+
+def test_a_post_from_another_origin_is_refused_without_side_effects(web):
+    controller, request, _ = web
+    status, _ = request("POST", "/api/start", {}, headers={"Origin": "http://evil.example"})
+    assert status == 403 and controller.state()["phase"] == "idle"
+    assert request("POST", "/api/start", {}, headers={"Origin": "null"})[0] == 403
+    assert request("POST", "/api/reset", {}, headers={"Origin": "http://127.0.0.1:1"})[0] == 403  # verkeerde poort
+    assert controller.state()["phase"] == "idle"
+
+
+def test_a_post_from_the_page_itself_is_accepted(web):
+    controller, request, _ = web
+    assert request("POST", "/api/start", {}, headers={"Origin": f"http://127.0.0.1:{request.port}"})[0] == 200
+    controller.join(30)
+    host = f"localhost:{request.port}"  # een browser stuurt Host en Origin altijd samen
+    assert request("POST", "/api/reset", {}, host=host, headers={"Origin": f"http://{host}"})[0] == 200
+
+
+@pytest.mark.parametrize("raw", [b"[]", b"null", b"3", b'"tekst"', b"true"])
+def test_a_json_body_that_is_not_an_object_is_a_clean_400(web, monkeypatch, raw):
+    _, request, _ = web
+    monkeypatch.setattr(ui_server.subprocess, "Popen", lambda argv: pytest.fail("mag niet uitschakelen"))
+    status, body = request("POST", "/api/shutdown", raw=raw)
+    assert status == 400 and json.loads(body)["ok"] is False

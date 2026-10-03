@@ -27,6 +27,7 @@ def context_factory(args) -> factory.ContextFactory:
     """Een functie die bij elke run een verse Context (en een opruimfunctie) maakt."""
     slots = factory.load_usb_slots(args.usb_fixture)
     if args.mock:
+        factory.split_faults(args.fault)  # een foute --fault meteen melden, niet pas bij de eerste run
         return lambda: factory.mock_context(args.fault, slots)
     return lambda: factory.real_context(args.client_url, args.gpio_chip, slots)
 
@@ -39,7 +40,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         make_context = context_factory(args)
     except (OSError, ValueError) as exc:
-        print(f"Fout: USB-fixturebestand niet te lezen: {exc}", file=sys.stderr)
+        print(f"Fout: {exc}", file=sys.stderr)
         return 2
     try:
         ctx, close = make_context()

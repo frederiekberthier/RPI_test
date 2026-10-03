@@ -8,6 +8,7 @@ Type=simple
 # Draait als root: de wifi-hotspot (nmcli), bluetooth en de GPIO-chip vragen die rechten.
 # Extra opties (bv. --usb-fixture /etc/rpitest/usb_fixture.json) in /etc/rpitest/ui.env:
 #   RPITEST_UI_ARGS=--usb-fixture /etc/rpitest/usb_fixture.json
+EnvironmentFile=-/etc/rpitest/env
 EnvironmentFile=-/etc/rpitest/ui.env
 Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=/var/lib/rpitest

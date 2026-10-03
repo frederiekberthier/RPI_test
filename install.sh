@@ -14,7 +14,9 @@
 #   -h, --help        deze uitleg
 #
 # Omgevingsvariabelen: KIOSK_USER (gebruiker voor het scherm, standaard degene die sudo gebruikte),
-# WIFI_COUNTRY (standaard BE), ETH_IFACE (standaard eth0).
+# WIFI_COUNTRY (standaard BE), ETH_IFACE (standaard eth0). Geef ze NA sudo mee:
+#   sudo WIFI_COUNTRY=NL ./install.sh server
+# (WIFI_COUNTRY=NL sudo ./install.sh ... werkt niet: sudo gooit variabelen van je eigen shell weg.)
 #
 # Veilig om opnieuw uit te voeren: voor elk onderdeel wordt eerst gekeken of het er al staat, en alleen
 # wat ontbreekt of verouderd is wordt (opnieuw) gedaan. Het is een nieuwe versie van de software? Dan wordt
@@ -52,7 +54,10 @@ need_root
 need_trixie
 
 # ---------------------------------------------------------------- wat hoort bij welke rol
-PACKAGES=(python3-venv python3-libgpiod iperf3 iw rfkill bluez network-manager dnsmasq-base curl)
+# python3-setuptools en python3-wheel: pip bouwt het pakket zonder isolatie (zie apply_app), zodat er geen internet
+# naar PyPI nodig is naast de Debian-bronnen
+PACKAGES=(python3-venv python3-setuptools python3-wheel python3-libgpiod iperf3 iw rfkill bluez network-manager
+          dnsmasq-base curl)
 OPTIONAL_PACKAGES=(libraspberrypi-bin)  # levert vcgencmd; zonder dit werkt de onderspanningsmeting niet
 KIOSK_USER="${KIOSK_USER:-${SUDO_USER:-}}"
 KIOSK_HOME="${KIOSK_HOME:-}"
@@ -61,7 +66,7 @@ if [ "$ROLE" = server ]; then
   PACKAGES+=(chromium)
   UNIT=rpitest-ui.service
   MY_IP="$(config_value SERVER_IP)"
-  COMPONENTS=(packages app hostname pins wificountry login kiosk unit network)
+  COMPONENTS=(packages app hostname pins wificountry login blanking kiosk unit network)
   if [ -z "$KIOSK_HOME" ] && [ -n "$KIOSK_USER" ] && id "$KIOSK_USER" >/dev/null 2>&1; then
     KIOSK_HOME="$(getent passwd "$KIOSK_USER" | cut -d: -f6)"
   fi
@@ -80,7 +85,8 @@ describe() {
     hostname)    echo "Hostnaam test-$ROLE" ;;
     pins)        echo "GPIO-pinnen vrij (I2C, SPI en seriële poort uit)" ;;
     wificountry) echo "Wifi-land $WIFI_COUNTRY" ;;
-    login)       echo "Automatisch inloggen en schermbeveiliging uit" ;;
+    login)       echo "Automatisch inloggen op het bureaublad" ;;
+    blanking)    echo "Schermbeveiliging uit (het scherm blijft aan)" ;;
     kiosk)       echo "Kioskbrowser bij het inloggen" ;;
     unit)        echo "Dienst $UNIT" ;;
     network)     echo "Vast IP-adres $MY_IP/24 op $ETH_IFACE" ;;
@@ -96,21 +102,30 @@ MISSING_PACKAGES=()
 APP_CHANGED=0
 UNIT_RESTARTED=0
 
+MISSING_OPTIONAL=()
+
 check_packages() {
   MISSING_PACKAGES=()
+  MISSING_OPTIONAL=()
   local pkg
-  for pkg in "${PACKAGES[@]}" "${OPTIONAL_PACKAGES[@]}"; do
+  for pkg in "${PACKAGES[@]}"; do
     package_installed "$pkg" || MISSING_PACKAGES+=("$pkg")
   done
+  for pkg in "${OPTIONAL_PACKAGES[@]}"; do
+    package_installed "$pkg" || MISSING_OPTIONAL+=("$pkg")
+  done
   if [ "${#MISSING_PACKAGES[@]}" -gt 0 ]; then
-    DETAIL="ontbreken: ${MISSING_PACKAGES[*]}"
+    DETAIL="ontbreken: ${MISSING_PACKAGES[*]} ${MISSING_OPTIONAL[*]}"
     return 1
   fi
-  DETAIL="alle $((${#PACKAGES[@]} + ${#OPTIONAL_PACKAGES[@]})) aanwezig"
+  # Een ontbrekend optioneel pakket telt niet mee: het wordt bij een installatie wel geprobeerd, maar als
+  # het niet te installeren is mag het onderdeel niet bij elke run opnieuw 'ontbreekt' blijven geven.
+  DETAIL="alle $((${#PACKAGES[@]})) aanwezig"
+  [ "${#MISSING_OPTIONAL[@]}" -eq 0 ] || DETAIL="$DETAIL; optioneel ontbreekt: ${MISSING_OPTIONAL[*]}"
 }
 
 apply_packages() {
-  local list=("${MISSING_PACKAGES[@]}")
+  local list=("${MISSING_PACKAGES[@]}" "${MISSING_OPTIONAL[@]}")
   [ "$FORCE" -eq 1 ] && list=("${PACKAGES[@]}" "${OPTIONAL_PACKAGES[@]}")
   [ "${#list[@]}" -gt 0 ] || return 0
   apt-get update || return 1
@@ -128,7 +143,11 @@ apply_packages() {
 check_app() {
   local installed
   installed="$(cat "$APP_DIR/REVISION" 2>/dev/null)"
-  if [ ! -x "$VENV/bin/python" ] || ! "$VENV/bin/python" -c "import rpitest, gpiod" 2>/dev/null; then
+  if [ -x "$VENV/bin/python" ] && [ ! -x "$VENV/bin/pip" ]; then
+    DETAIL="venv onvolledig (pip ontbreekt)"  # python3 -m venv maakt eerst python en pas dan pip
+    return 1
+  fi
+  if [ ! -x "$VENV/bin/python" ] || ! "$VENV/bin/python" -I -c "import rpitest, gpiod" 2>/dev/null; then
     DETAIL="nog niet geïnstalleerd (of rpitest/gpiod niet te importeren)"
     return 1
   fi
@@ -142,9 +161,12 @@ check_app() {
 apply_app() {
   mkdir -p "$APP_DIR" "$DATA_DIR/reports" || return 1
   # --system-site-packages: de module 'gpiod' komt uit het Debian-pakket python3-libgpiod
-  [ -x "$VENV/bin/python" ] || python3 -m venv --system-site-packages "$VENV" || return 1
-  "$VENV/bin/pip" install --upgrade --force-reinstall --no-deps "$REPO_DIR" || return 1
-  "$VENV/bin/python" -c "import rpitest, gpiod" || { warn "rpitest of gpiod niet te importeren na de installatie"; return 1; }
+  # pip is het laatste dat de venv krijgt: ontbreekt het, dan is een eerdere poging halverwege mislukt (--clear begint opnieuw)
+  [ -x "$VENV/bin/pip" ] || python3 -m venv --clear --system-site-packages "$VENV" || return 1
+  # --no-build-isolation: setuptools komt uit het Debian-pakket (de venv ziet de systeem-pakketten), dus pip hoeft
+  # niets van PyPI te halen; het pakket zelf heeft geen afhankelijkheden (--no-deps).
+  "$VENV/bin/pip" install --upgrade --force-reinstall --no-deps --no-build-isolation "$REPO_DIR" || return 1
+  "$VENV/bin/python" -I -c "import rpitest, gpiod" || { warn "rpitest of gpiod niet te importeren na de installatie"; return 1; }
   repo_revision > "$APP_DIR/REVISION"
   APP_CHANGED=1
 }
@@ -209,15 +231,26 @@ check_login() {
 }
 
 apply_login() {
-  local ok=0
-  raspi-config nonint do_boot_behaviour B4 || { warn "automatisch inloggen instellen mislukte"; ok=1; }
-  raspi-config nonint do_blanking 1 || { warn "schermbeveiliging uitzetten mislukte"; ok=1; }
-  return "$ok"
+  raspi-config nonint do_boot_behaviour B4 || { warn "automatisch inloggen instellen mislukte"; return 1; }
+}
+
+# Apart onderdeel (en niet bij 'login'): slaagt het ene en faalt het andere, dan moet alleen het mislukte
+# bij de volgende run opnieuw. get_blanking geeft 0 (schermbeveiliging aan) of 1 (uit), zoals get_i2c.
+check_blanking() {
+  case "$(raspi_state get_blanking)" in
+    1) ;;
+    0) DETAIL="schermbeveiliging staat aan: het scherm wordt na enkele minuten zwart"; return 1 ;;
+    *) DETAIL="raspi-config geeft geen antwoord"; return 2 ;;
+  esac
+}
+
+apply_blanking() {
+  raspi-config nonint do_blanking 1 || { warn "schermbeveiliging uitzetten mislukte"; return 1; }
 }
 
 check_kiosk() {
   if [ -z "$KIOSK_HOME" ]; then
-    DETAIL="geen gebruiker bekend (geef KIOSK_USER=<naam> of start met sudo vanuit je gebruiker)"
+    DETAIL="geen gebruiker bekend (start met sudo vanuit je gebruiker, of geef: sudo KIOSK_USER=<naam> ./install.sh ...)"
     return 2
   fi
   # cmp geeft 2 terug als een bestand ontbreekt; voor ons is dat gewoon "ontbreekt" (1)
@@ -226,12 +259,21 @@ check_kiosk() {
 }
 
 apply_kiosk() {
-  [ -n "$KIOSK_HOME" ] || { warn "geen gebruiker voor het scherm: start met sudo vanuit je gebruiker, of geef KIOSK_USER=<naam>"; return 1; }
-  mkdir -p "$APP_DIR" "$KIOSK_HOME/.config/labwc" || return 1
+  [ -n "$KIOSK_HOME" ] || { warn "geen gebruiker voor het scherm: start met sudo vanuit je gebruiker, of geef: sudo KIOSK_USER=<naam> ./install.sh ..."; return 1; }
+  mkdir -p "$APP_DIR" || return 1
   install -m 0755 "$IMAGE_DIR/kiosk.sh" "$APP_DIR/kiosk.sh" || return 1
-  # Een eigen autostart vervangt die van het bureaublad: geen taakbalk, enkel onze pagina.
-  printf '%s\n' "$APP_DIR/kiosk.sh &" > "$KIOSK_HOME/.config/labwc/autostart" || return 1
-  chown -R "$KIOSK_USER:" "$KIOSK_HOME/.config/labwc" 2>/dev/null || warn "eigenaar van ~/.config/labwc niet aangepast"
+  # Beide mappen met de juiste eigenaar aanmaken: bestond ~/.config nog niet, dan werd hij als root aangemaakt
+  # en konden labwc en Chromium er na de automatische login niet in schrijven.
+  install -d -o "$KIOSK_USER" -g "$KIOSK_USER" "$KIOSK_HOME/.config" "$KIOSK_HOME/.config/labwc" || return 1
+  local autostart="$KIOSK_HOME/.config/labwc/autostart"
+  # Een eigen autostart vervangt die van het bureaublad: geen taakbalk, enkel onze pagina. Een bestaande eigen
+  # autostart wordt eenmalig bewaard als autostart.bak.
+  if [ -f "$autostart" ] && ! grep -q "$APP_DIR/kiosk.sh" "$autostart" && [ ! -e "$autostart.bak" ]; then
+    cp -p "$autostart" "$autostart.bak" || return 1
+    warn "bestaande autostart bewaard als $autostart.bak"
+  fi
+  printf '%s\n' "$APP_DIR/kiosk.sh &" > "$autostart" || return 1
+  chown "$KIOSK_USER:" "$autostart" 2>/dev/null || warn "eigenaar van $autostart niet aangepast"
 }
 
 check_unit() {
@@ -250,7 +292,9 @@ check_network() {
   local current
   current="$(nmcli -g ipv4.addresses connection show "$NM_PROFILE" 2>/dev/null)"
   DETAIL="nu: ${current:-geen profiel}"
-  [ "$current" = "$MY_IP/24" ]
+  [ "$current" = "$MY_IP/24" ] || return 1
+  # de diensten moeten dezelfde poort kiezen als dit profiel (zie rpitest/config.py, ETH_IFACE)
+  [ "$(grep -s '^ETH_IFACE=' "$ETC_DIR/env")" = "ETH_IFACE=$ETH_IFACE" ] || { DETAIL="$DETAIL; $ETC_DIR/env wijkt af"; return 1; }
 }
 
 # Vast IP-adres op de rechtstreekse kabel (geen gateway: dit is alleen de testkabel). Dit gaat als laatste:
@@ -263,6 +307,10 @@ apply_network() {
   nmcli connection add type ethernet ifname "$ETH_IFACE" con-name "$NM_PROFILE" \
     ipv4.method manual ipv4.addresses "$MY_IP/24" ipv6.method disabled \
     connection.autoconnect yes connection.autoconnect-priority 100 >/dev/null || return 1
+  # de diensten lezen dit bestand (EnvironmentFile), zodat zij dezelfde poort kiezen
+  mkdir -p "$ETC_DIR" || return 1
+  { grep -sv '^ETH_IFACE=' "$ETC_DIR/env"; echo "ETH_IFACE=$ETH_IFACE"; } > "$ETC_DIR/env.new" \
+    && mv "$ETC_DIR/env.new" "$ETC_DIR/env" || return 1
   nmcli connection up "$NM_PROFILE" >/dev/null 2>&1 \
     || warn "profiel nog niet actief (geen kabel aangesloten?); het start vanzelf zodra er link is"
 }

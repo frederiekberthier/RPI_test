@@ -109,7 +109,7 @@ De tests starten daarna vanzelf: de TEST-SERVER toont het scherm met de startkno
 | `bt.transmit` | TEST-CLIENT is zichtbaar, TEST-SERVER moet hem zien | |
 
 Aandachtspunten:
-- **Wifi-land** staat op beide Pi's op `BE` (door `install.sh`; ander land met `WIFI_COUNTRY=<code>`). Zonder land
+- **Wifi-land** staat op beide Pi's op `BE` (door `install.sh`; ander land met `sudo WIFI_COUNTRY=<code> ./install.sh server`). Zonder land
   kan het accesspoint op 5 GHz niet starten.
 - **De TEST-SERVER gebruikt zijn wifi als accesspoint**, en zijn ethernetpoort voor de TEST-CLIENT. Beheer van
   de TEST-SERVER gebeurt dus met toetsenbord en scherm, of met een extra USB-ethernetadapter.
@@ -130,11 +130,13 @@ poorten), twee mogen USB 2 zijn. Ze moeten naast elkaar in de gestapelde poorten
 smalle sticks of korte USB-verlengkabels, bevestigd in een blok of plank zodat de TEST-CLIENT er telkens
 op dezelfde manier aan gekoppeld wordt.
 
-**Sticks voorbereiden** (op een Linux-pc of de TEST-SERVER, één keer per stick):
+**Sticks voorbereiden** (op de TEST-SERVER of een Linux-pc, één keer per stick). Op de TEST-SERVER staat de software
+na `install.sh` in `/opt/rpitest/venv`; op een andere pc installeer je ze eerst met `pip install -e .` en laat je het
+pad weg (`sudo python -m rpitest.usbtools ...`, of `sudo "$(which python)" -m rpitest.usbtools ...` in een venv):
 ```
-sudo .venv/bin/python -m rpitest.usbtools scan                              # welk /dev/sdX is mijn stick?
-sudo .venv/bin/python -m rpitest.usbtools prepare /dev/sdX --label SLOT1    # toont wat er gewist wordt
-sudo .venv/bin/python -m rpitest.usbtools prepare /dev/sdX --label SLOT1 --yes
+sudo /opt/rpitest/venv/bin/python -m rpitest.usbtools scan                              # welk /dev/sdX is mijn stick?
+sudo /opt/rpitest/venv/bin/python -m rpitest.usbtools prepare /dev/sdX --label SLOT1    # toont wat er gewist wordt
+sudo /opt/rpitest/venv/bin/python -m rpitest.usbtools prepare /dev/sdX --label SLOT1 --yes
 ```
 Gebruik `SLOT1` en `SLOT2` voor de USB 3-sticks in de blauwe poorten, `SLOT3` en `SLOT4` voor de
 USB 2-poorten. **`prepare` overschrijft sector 0 (partitietabel) van de stick.** Gebruik hem alleen op
@@ -151,7 +153,10 @@ groter dan 256 GiB en gekoppelde (mounted) apparaten.
 
 **Veiligheid:** de test schrijft alleen naar een apparaat waarvan sector 0 onze header bevat, en
 alleen in een testgebied vanaf 16 MB. Een stick van een student die toevallig in de TEST-CLIENT zit, heeft die
-header niet en wordt niet aangeraakt. Alleen `/dev/sdX`-apparaten die aan USB hangen worden geaccepteerd.
+header niet en wordt niet aangeraakt. Alleen `/dev/sdX`-apparaten die aan USB hangen worden geaccepteerd, het moet een
+echt blokapparaat zijn, het wordt **exclusief** geopend (een gekoppelde of anderszins geclaimde stick wordt door Linux geweigerd) en de
+header wordt gecontroleerd op dezelfde bestandsbeschrijver als waarop geschreven wordt. Wordt de stick tussen de controle en het
+openen vervangen, dan weigert de test.
 
 **Poorten benoemen:** de namen en drempels per slot staan in `USB_SLOTS` in `rpitest/config.py`.
 Een ander fixture-indeling kan met `python -m rpitest --usb-fixture slots.json`, met een lijst van dezelfde
@@ -169,8 +174,8 @@ Dit komt als laatste in de run, zodat onderspanning uit de eerdere tests ook in 
 | Check | Wat gebeurt er | Uitkomst |
 |---|---|---|
 | `power.sensors` | temperatuur, frequentie en `vcgencmd get_throttled` leesbaar | FAIL zonder temperatuur of frequentie; WARN zonder `get_throttled` |
-| `power.supply` | onderspanning tijdens de belasting; op de Pi 5 ook de gemeten ingangsspanning (`vcgencmd pmic_read_adc`) | FAIL bij onderspanning nu; WARN bij een spanning onder 4,75 V of onderspanning alleen sinds het opstarten |
-| `power.thermal` | rusttemperatuur, piek en laagste klokfrequentie | FAIL vanaf 85 °C; WARN bij throttling, vanaf 80 °C of al 60 °C in rust |
+| `power.supply` | onderspanning tijdens de belasting, ook een korte dip tussen twee metingen (de firmware houdt die vast in de `occurred`-bits); op de Pi 5 ook de gemeten ingangsspanning (`vcgencmd pmic_read_adc`) | FAIL bij onderspanning nu of nieuw tijdens de test; WARN bij een spanning onder 4,75 V of onderspanning alleen sinds het opstarten |
+| `power.thermal` | rusttemperatuur, piek en laagste klokfrequentie onder belasting (de meting na afloop telt niet mee: dan staat de klok weer op de rust-klok) | FAIL vanaf 85 °C; WARN bij throttling (ook een korte piek tussen twee metingen), vanaf 80 °C of al 60 °C in rust |
 | `power.cpu` | alle kernen actief (4) en een vaste SHA-256-keten geeft overal hetzelfde resultaat | FAIL bij een ontbrekende kern of verkeerde uitkomsten; WARN bij een veel tragere kern |
 | `power.memory` | 256 MB (max. de helft van het vrije geheugen) met vaste en adresafhankelijke patronen | FAIL bij fout teruggelezen blokken |
 

@@ -25,7 +25,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         make_context = context_factory(args)
     except (OSError, ValueError) as exc:
-        print(f"Fout: USB-fixturebestand niet te lezen: {exc}", file=sys.stderr)
+        print(f"Fout: {exc}", file=sys.stderr)
         return 2
     probe = factory.mock_probe if args.mock else factory.real_probe(args.client_url)
 

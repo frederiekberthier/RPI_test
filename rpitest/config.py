@@ -6,7 +6,12 @@ De drempels zijn eerste schattingen en moeten geijkt worden met een bekend goede
 # --- directe kabel tussen TEST-SERVER en TEST-CLIENT ---
 SERVER_IP = "192.168.77.1"
 CLIENT_IP = "192.168.77.2"
+TEST_NETWORK_PREFIX = SERVER_IP.rsplit(".", 1)[0] + "."  # het testnetwerk: "192.168.77."
 AGENT_PORT = 8765
+
+# --- interfaces: de ingebouwde poorten hebben voorrang op USB-adapters (die sorteren er alfabetisch voor) ---
+ETH_IFACE = "eth0"  # overschrijfbaar met de omgevingsvariabele ETH_IFACE (zelfde naam als bij install.sh)
+WIFI_IFACE = "wlan0"  # overschrijfbaar met WIFI_IFACE
 
 # --- wired netwerk ---
 IPERF_PORT = 5201

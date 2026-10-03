@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import argparse
+import errno
 import sys
+import time
 
 from .. import config
 from ..gpio import real
@@ -11,6 +13,25 @@ from ..sysinfo import pi_info
 from ..system.linux import LinuxOps
 from .core import Agent
 from .server import make_server
+
+
+def bind_when_available(make, host: str, port: int, sleep=time.sleep, log=print):
+    """Maak de server aan, en wacht zolang het adres nog niet bestaat.
+
+    NetworkManager zet het vaste testadres pas bij link (kabel aangesloten). Zonder te wachten crasht de
+    agent elke 2 s (systemd herstart hem), en lijkt de dienst 'niet te draaien'. Andere fouten (bv. poort
+    bezet) worden niet herhaald."""
+    announced = False
+    while True:
+        try:
+            return make(host, port)
+        except OSError as exc:
+            if exc.errno != errno.EADDRNOTAVAIL:
+                raise
+            if not announced:
+                log(f"Wachten tot het adres {host} bestaat (testkabel aangesloten?)...")
+                announced = True
+            sleep(2)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -32,7 +53,14 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     ops = LinuxOps()
-    server = make_server(Agent(port, pi_info, ops), args.host, args.port)
+    agent = Agent(port, pi_info, ops)
+    try:
+        server = bind_when_available(lambda host, p: make_server(agent, host, p), args.host, args.port)
+    except OSError as exc:
+        print(f"Fout: kan niet luisteren op {args.host}:{args.port}: {exc}", file=sys.stderr)
+        ops.close()
+        port.close()
+        return 2
     print(f"Agent luistert op {args.host}:{args.port} (GPIO-chip {port.chip_path})")
     try:
         server.serve_forever()

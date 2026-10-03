@@ -107,3 +107,59 @@ def test_pi_info_from_fake_proc(tmp_path):
 
 def test_pi_info_survives_missing_files(tmp_path):
     assert pi_info(tmp_path)["model"] == "onbekend"
+
+
+# ---------------------------------------------------------------- issue #10: de juiste foutmelding
+
+def failing_module(system, errno_value, text):
+    mod = system.module()
+
+    def fail(path, consumer=None, config=None):
+        raise OSError(errno_value, text)
+
+    mod.request_lines = fail
+    return mod
+
+
+def test_permission_errors_are_not_reported_as_busy_pins(system):
+    import errno
+    mod = failing_module(system, errno.EACCES, "Permission denied")
+    with pytest.raises(RuntimeError) as exc:
+        real.GpiodPort("/dev/gpiochip0", gpiod=mod)
+    message = str(exc.value)
+    assert "geen toegang" in message and "/dev/gpiochip0" in message and "sudo" in message
+    assert "in gebruik" not in message and "2, 3" not in message
+
+
+def test_a_missing_chip_is_reported_as_missing(system):
+    import errno
+    mod = failing_module(system, errno.ENOENT, "No such file or directory")
+    with pytest.raises(RuntimeError, match="bestaat niet") as exc:
+        real.GpiodPort("/dev/gpiochip9", gpiod=mod)
+    assert "--list-chips" in str(exc.value) and "in gebruik" not in str(exc.value)
+
+
+def test_other_errors_keep_the_original_error_text(system):
+    import errno
+    mod = failing_module(system, errno.EIO, "Input/output error")
+    with pytest.raises(RuntimeError, match="Input/output error") as exc:
+        real.GpiodPort("/dev/gpiochip0", gpiod=mod)
+    assert "in gebruik" not in str(exc.value)
+
+
+def test_only_busy_pins_are_named_when_some_pins_are_busy(system):
+    system.busy = {14, 15}
+    with pytest.raises(RuntimeError) as exc:
+        real.GpiodPort(gpiod=system.module())
+    message = str(exc.value)
+    assert "14, 15" in message and "2," not in message
+
+
+@pytest.mark.parametrize("mem_total_kb,expected_mb", [
+    (416000, 512),      # 512 MB-bord: geen minimum van 1 GB afdwingen (issue #15)
+    (206000, 256),
+    (949000, 1024), (1900000, 2048), (3900000, 4096), (8210000, 8192), (16200000, 16384),
+])
+def test_nominal_ram_is_not_forced_up_to_one_gigabyte(mem_total_kb, expected_mb):
+    from rpitest.sysinfo import _nominal_ram_mb
+    assert _nominal_ram_mb(mem_total_kb) == expected_mb

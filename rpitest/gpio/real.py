@@ -7,6 +7,7 @@ Windows importeerbaar blijft.
 
 from __future__ import annotations
 
+import errno
 import glob
 from collections.abc import Iterable
 from types import ModuleType
@@ -86,13 +87,22 @@ class GpiodPort(GpioPort):
             raise RuntimeError(self._open_error(exc)) from exc
 
     def _open_error(self, exc: OSError) -> str:
+        # Fouten die niets met bezette lijnen te maken hebben krijgen een eigen melding; anders zou elke
+        # probe falen en zou 'alle pinnen bezet' de gebruiker naar de verkeerde oorzaak sturen.
+        if exc.errno in (errno.EACCES, errno.EPERM):
+            return (f"geen toegang tot {self._path}: {exc.strerror or exc}. Start als root "
+                    f"(sudo) of voeg de gebruiker toe aan de groep gpio.")
+        if exc.errno in (errno.ENOENT, errno.ENODEV):
+            return (f"{self._path} bestaat niet ({exc.strerror or exc}). Controleer de naam met "
+                    f"`python -m rpitest.agent --list-chips`.")
         busy = []
-        for pin in self._pins:  # zoek welke lijnen bezet zijn om een bruikbare melding te geven
+        for pin in self._pins:  # zoek welke lijnen echt bezet zijn om een bruikbare melding te geven
             try:
                 self._g.request_lines(self._path, consumer="rpitest-probe",
                                       config={pin: self._input_settings(Pull.NONE)}).release()
-            except OSError:
-                busy.append(pin)
+            except OSError as probe_error:
+                if probe_error.errno == errno.EBUSY:
+                    busy.append(pin)
         if busy:
             return (f"GPIO-lijnen in gebruik door een ander proces of een driver: "
                     f"{', '.join(map(str, busy))} (draait er al een rpitest, of staan I2C/SPI/UART-overlays aan?)")

@@ -51,18 +51,20 @@ stappenplan staat ook in de [README](../README.md#installeren-op-een-pi-stappenp
 |---|---|---|
 | voorcontrole (`image/preflight.sh`) | ja | ja |
 | pakketten via `apt` (alleen de ontbrekende) | ja, plus `chromium` | ja |
-| software in `/opt/rpitest/venv` | ja | ja |
+| software in `/opt/rpitest/venv` (gebouwd met het Debian-pakket `python3-setuptools`, dus zonder PyPI) | ja | ja |
 | hostnaam `test-server` / `test-client` | ja | ja |
 | I2C, SPI en seriële console uit | ja | ja |
 | wifi-land (standaard `BE`) | ja | ja |
-| automatisch inloggen, schermbeveiliging uit | ja | nee |
+| automatisch inloggen op het bureaublad | ja | nee |
+| schermbeveiliging uit (apart onderdeel, wordt bij een mislukking opnieuw geprobeerd) | ja | nee |
 | kioskbrowser bij het inloggen | ja | nee |
 | dienst `rpitest-ui` / `rpitest-agent` | ja | ja |
 | vast IP-adres (als laatste) | `.1` | `.2` |
 | alleen-lezen bestandssysteem | nee | met `--readonly` |
 
 **Opties:** `--check` (alleen tonen), `--force` (alles opnieuw), `--readonly` (alleen `client`), `--skip-preflight`.
-Omgevingsvariabelen: `KIOSK_USER`, `WIFI_COUNTRY`, `ETH_IFACE`.
+Omgevingsvariabelen: `KIOSK_USER`, `WIFI_COUNTRY`, `ETH_IFACE`. Geef ze na `sudo` mee, bv. `sudo WIFI_COUNTRY=NL ./install.sh server`:
+`WIFI_COUNTRY=NL sudo ./install.sh server` werkt niet, want sudo gooit variabelen van je eigen shell weg.
 
 **Is de software al geïnstalleerd?** Het script bepaalt dat per onderdeel: pakketten via `dpkg-query`, de software via de
 `REVISION` die bij de installatie is vastgelegd, de dienst via `systemctl` en het IP-adres via NetworkManager. Draai je het script
@@ -87,6 +89,7 @@ Schrijf `client-master.img` met Imager of `dd` naar elke nieuwe SD.
 | Rapporten (HTML + JSON) | `/var/lib/rpitest/reports` op de TEST-SERVER |
 | Diensten | `rpitest-ui` (TEST-SERVER), `rpitest-agent` (TEST-CLIENT) |
 | IP-adressen | `rpitest/config.py` (TEST-SERVER `.1`, TEST-CLIENT `.2`); de scripts lezen ze daar |
+| Gekozen netwerkpoort (`ETH_IFACE`) | `/etc/rpitest/env`, door `install.sh` geschreven en door beide diensten gelezen; de ingebouwde `eth0` heeft voorrang op USB-adapters |
 | Extra opties voor het scherm | `/etc/rpitest/ui.env`, bv. `RPITEST_UI_ARGS=--usb-fixture /etc/rpitest/usb_fixture.json` |
 | Logboek | `journalctl -u rpitest-ui` of `journalctl -u rpitest-agent` |
 
@@ -108,7 +111,7 @@ Elk rapport is een zelfstandige HTML-pagina (`report-<serienummer>-<tijd>.html`)
 | Symptoom | Kijk naar |
 |---|---|
 | Scherm blijft zwart of toont een foutpagina | `systemctl status rpitest-ui`; draait het bureaublad met automatisch inloggen (`raspi-config`)? Test lokaal: `curl http://127.0.0.1:8080/api/state` |
-| "Wachten op de TEST-CLIENT" blijft staan | Op de TEST-CLIENT: `systemctl status rpitest-agent`; de netwerkkabel (rechtstreeks, geen switch); `ip addr` op beide Pi's; `curl http://192.168.77.2:8765` vanaf de TEST-SERVER geeft een antwoord als de agent draait |
+| "Wachten op de TEST-CLIENT" blijft staan | Op de TEST-CLIENT: `systemctl status rpitest-agent` (zonder kabel wacht de agent tot het vaste adres bestaat: `journalctl -u rpitest-agent`); de netwerkkabel (rechtstreeks, geen switch); `ip addr` op beide Pi's; `curl http://192.168.77.2:8765` vanaf de TEST-SERVER geeft een antwoord als de agent draait |
 | Test faalt met "GPIO-lijnen in gebruik" | I2C, SPI of de seriële console staan aan, of er draait nog een andere `rpitest`; herstart de dienst |
 | Alles geeft FAIL na een bedradingsfout | Voer de zelftest uit met een bekend goede Pi (zie `docs/opstelling.md`) |
 | Browser start niet | `journalctl --user` en `ls ~/.config/labwc/autostart`; controleer de naam van het Chromium-programma (`chromium` of `chromium-browser`) |
@@ -123,6 +126,7 @@ Controleer bij de eerste keer:
    `do_wifi_country`, `enable_overlayfs` en `enable_bootro`. Het script meldt een waarschuwing als er een mislukt.
 3. De autostart van labwc (`~/.config/labwc/autostart`). Ik ga ervan uit dat die de standaard autostart vervangt
    (geen taakbalk). Verschijnt de taakbalk toch, of start de browser niet, dan zit het probleem hier.
-4. Schermbeveiliging: als het scherm na enkele minuten zwart wordt, moet dat apart worden uitgezet.
+4. Schermbeveiliging: `install.sh` zet die uit via `raspi-config nonint do_blanking 1` en controleert dat met `get_blanking` (0 = aan,
+   1 = uit; de betekenis is nog niet op Trixie bevestigd). Wordt het scherm toch na enkele minuten zwart, meld dat dan.
 5. De kiosk-opties van Chromium (`--ozone-platform-hint=auto` en de rest) op de Chromium-versie van Trixie.
 6. Of de installatie als root over SSH via wifi niet vastloopt wanneer het vaste IP-adres aan het eind wordt gezet.

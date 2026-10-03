@@ -28,10 +28,16 @@ class ShellResult:
     stderr: str = ""
 
 
+def tool_env() -> dict[str, str]:
+    """Omgeving voor opdrachten waarvan we de uitvoer lezen: vaste taal (de parsers zoeken Engelse tekst)."""
+    return {**os.environ, "LC_ALL": "C", "LANG": "C"}
+
+
 class Shell:
     def run(self, argv: list[str], timeout: float = 30) -> ShellResult:
         try:
-            p = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=timeout)
+            p = subprocess.run(argv, capture_output=True, text=True, errors="replace", timeout=timeout,
+                               env=tool_env(), stdin=subprocess.DEVNULL)
         except FileNotFoundError:
             return ShellResult(127, "", f"{argv[0]}: niet gevonden (pakket niet geinstalleerd?)")
         except subprocess.TimeoutExpired as exc:
@@ -42,7 +48,7 @@ class Shell:
 
 def _read(path: Path) -> str | None:
     try:
-        return path.read_text().strip()
+        return path.read_text(encoding="utf-8", errors="replace").strip()  # vrije tekst van apparaten kan ongeldig zijn
     except OSError:
         return None
 
@@ -104,10 +110,24 @@ def rfkill_state(root: Path = Path("/")) -> list[dict]:
             for d in sorted(base.iterdir())]
 
 
+def choose_interface(candidates: list[str], preferred: str | None, addresses: dict[str, str] | None = None) -> str | None:
+    """Kies de interface voor de test: de gevraagde naam, anders die met het testadres, anders de eerste.
+    Een USB-adapter (enx...) sorteert voor 'eth0' en mag de ingebouwde poort niet verdringen."""
+    if preferred in candidates:
+        return preferred
+    for name in candidates:
+        if (addresses or {}).get(name, "").startswith(config.TEST_NETWORK_PREFIX):
+            return name
+    return candidates[0] if candidates else None
+
+
 class LinuxOps(SystemOps):
-    def __init__(self, shell: Shell | None = None, root: Path = Path("/")):
+    def __init__(self, shell: Shell | None = None, root: Path = Path("/"), eth_iface: str | None = None,
+                 wifi_iface: str | None = None):
         self._sh = shell or Shell()
         self._root = root
+        self._eth_pref = eth_iface or os.environ.get("ETH_IFACE") or config.ETH_IFACE
+        self._wifi_pref = wifi_iface or os.environ.get("WIFI_IFACE") or config.WIFI_IFACE
         self._iperf_server: subprocess.Popen | None = None
         self._bt_proc: subprocess.Popen | None = None
         self._stress: dict | None = None
@@ -120,17 +140,30 @@ class LinuxOps(SystemOps):
             raise OpsError(f"{' '.join(argv[:3])} faalde ({result.returncode}): {detail}")
         return result
 
+    def _output(self, result: ShellResult, argv: list[str]) -> str:
+        """De uitvoer van een opdracht die ook bij 'geen resultaat' een afsluitcode kan geven (ping, iperf3): zonder
+        uitvoer is de afsluitcode en de foutmelding het enige dat we weten, en die tonen we."""
+        if result.returncode != 0 and not result.stdout.strip():
+            detail = result.stderr.strip()[:300] or "geen uitvoer"
+            raise OpsError(f"{argv[0]} faalde ({result.returncode}): {detail}")
+        return result.stdout
+
+    def _addresses(self) -> dict[str, str]:
+        return parsers.parse_ip_addresses(self._run(["ip", "-4", "-o", "addr", "show"], check=False).stdout)
+
     def _eth(self) -> str:
         eth, _ = list_ifaces(self._root)
         if not eth:
             raise OpsError("geen ethernet-interface gevonden")
-        return eth[0]
+        # alleen het adres opvragen als de gewenste poort er niet is (bespaart een aanroep)
+        addresses = {} if self._eth_pref in eth else self._addresses()
+        return choose_interface(eth, self._eth_pref, addresses)
 
     def _wlan(self) -> str:
         _, wifi = list_ifaces(self._root)
         if not wifi:
             raise OpsError("geen wifi-interface gevonden")
-        return wifi[0]
+        return choose_interface(wifi, self._wifi_pref)
 
     def _ip_of(self, iface: str) -> str | None:
         return parsers.parse_ip_addr(self._run(["ip", "-4", "-o", "addr", "show", "dev", iface], check=False).stdout)
@@ -151,18 +184,16 @@ class LinuxOps(SystemOps):
         }
 
     def ping(self, host: str, count: int) -> dict:
-        result = self._run(["ping", "-c", str(count), "-i", "0.2", "-q", "-W", "1", host],
-                           timeout=count * 1.3 + 10, check=False)
-        if result.returncode == 127:
-            raise OpsError(result.stderr)
-        return parsers.parse_ping(result.stdout)
+        argv = ["ping", "-c", str(count), "-i", "0.2", "-q", "-W", "1", host]
+        result = self._run(argv, timeout=count * 1.3 + 10, check=False)
+        return parsers.parse_ping(self._output(result, argv))  # 100% verlies geeft afsluitcode 1 mét statistiek
 
     def iperf3_server_start(self) -> None:
         self.iperf3_server_stop()
         try:
             self._iperf_server = subprocess.Popen(
                 ["iperf3", "-s", "-p", str(config.IPERF_PORT)],
-                stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True, env=tool_env())
         except FileNotFoundError as exc:
             raise OpsError("iperf3 niet gevonden (sudo apt install iperf3)") from exc
         time.sleep(0.5)
@@ -173,21 +204,24 @@ class LinuxOps(SystemOps):
 
     def iperf3_server_stop(self) -> None:
         proc, self._iperf_server = self._iperf_server, None
-        if proc is not None and proc.poll() is None:
+        if proc is None:
+            return
+        if proc.poll() is None:
             proc.terminate()
             try:
                 proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 proc.kill()
+                proc.wait()  # anders blijft het een zombie
+        if proc.stderr is not None:
+            proc.stderr.close()
 
     def iperf3_client(self, host: str, seconds: int, reverse: bool) -> dict:
         argv = ["iperf3", "-c", host, "-p", str(config.IPERF_PORT), "-t", str(seconds), "-J"]
         if reverse:
             argv.append("-R")
         result = self._run(argv, timeout=seconds + 15, check=False)
-        if result.returncode == 127:
-            raise OpsError(result.stderr)
-        return parsers.parse_iperf3(result.stdout)
+        return parsers.parse_iperf3(self._output(result, argv))  # een JSON-fout van iperf3 zelf leest de parser
 
     # --- wifi ---
     def wifi_info(self) -> dict:
@@ -211,7 +245,10 @@ class LinuxOps(SystemOps):
 
     def wifi_link(self) -> dict:
         iface = self._wlan()
-        link = parsers.parse_iw_link(self._run(["iw", "dev", iface, "link"], check=False).stdout)
+        result = self._run(["iw", "dev", iface, "link"], check=False)
+        if result.returncode != 0 and "Not connected" not in result.stdout + result.stderr:
+            raise OpsError(f"iw dev {iface} link faalde ({result.returncode}): {(result.stderr or result.stdout).strip()[:300]}")
+        link = parsers.parse_iw_link(result.stdout)
         link["ip"] = self._ip_of(iface)
         return link
 
@@ -242,8 +279,10 @@ class LinuxOps(SystemOps):
             self._run(["bluetoothctl", "remove", forget_mac], check=False)
         result = self._run(["bluetoothctl", "--timeout", str(seconds), "scan", "on"],
                            timeout=seconds + 15, check=False)
-        if result.returncode == 127:
-            raise OpsError(result.stderr)
+        # De afsluitcode na de time-out is niet betrouwbaar; "Discovery started" bewijst dat het scannen begon
+        if result.returncode != 0 and "Discovery started" not in result.stdout:
+            detail = (result.stderr or result.stdout).strip()[:300] or "geen uitvoer"
+            raise OpsError(f"bluetoothctl scan faalde ({result.returncode}): {detail}")
         return parsers.parse_bluetooth_scan(result.stdout)
 
     def bt_discoverable(self, enabled: bool) -> None:
@@ -255,7 +294,7 @@ class LinuxOps(SystemOps):
             return
         try:
             self._bt_proc = subprocess.Popen(["bluetoothctl"], stdin=subprocess.PIPE, stdout=subprocess.DEVNULL,
-                                             stderr=subprocess.DEVNULL, text=True)
+                                             stderr=subprocess.DEVNULL, text=True, env=tool_env())
         except FileNotFoundError as exc:
             raise OpsError("bluetoothctl niet gevonden (sudo apt install bluez)") from exc
         self._send_bt("power on\npairable off\ndiscoverable on\n")
@@ -301,6 +340,8 @@ class LinuxOps(SystemOps):
             raise OpsError(f"geen toegestaan blokapparaat: {block!r}")
         if parsers.usb_path_from_syspath(os.path.realpath(self._root / "sys/block" / block)) is None:
             raise OpsError(f"{block} is geen USB-apparaat")
+        if storage.is_mounted(block, _read(self._root / "proc/mounts") or ""):
+            raise OpsError(f"{block} is gekoppeld (mounted); ontkoppel de stick eerst")
         return storage.run_storage_test(f"/dev/{block}", size_mb)
 
     def usb_uptime(self) -> float:
@@ -390,7 +431,9 @@ class LinuxOps(SystemOps):
 
     def close(self) -> None:
         """Ruim alles op wat deze instantie gestart heeft (aanroepen bij afsluiten)."""
-        for step in (self.stress_stop, self.iperf3_server_stop, lambda: self.bt_discoverable(False)):
+        steps = (self.stress_stop, self.iperf3_server_stop, lambda: self.bt_discoverable(False),
+                 self.wifi_hotspot_stop, self.wifi_forget)  # ook de hotspot en het wifi-profiel van een afgebroken test
+        for step in steps:
             try:
                 step()
             except Exception:

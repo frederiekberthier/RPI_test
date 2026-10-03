@@ -93,9 +93,20 @@ def _make_handler(controller: Controller, reports_dir: Path, allow_shutdown: boo
             if not self._host_ok():
                 self._send(403, b"verboden", "text/plain")
                 return
+            # een cross-site formulier of fetch kan geen application/json zonder preflight sturen, en een pagina van
+            # elders stuurt zijn eigen Origin mee: weiger beide, want hier starten we tests en schakelen we de Pi uit
+            if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
+                self._json({"ok": False, "message": "alleen application/json"}, 415)
+                return
+            origin = self.headers.get("Origin")
+            if origin is not None and origin != f"http://{self.headers.get('Host', '')}":
+                self._send(403, b"verboden", "text/plain")
+                return
             try:
                 body = json.loads(raw or b"{}")
             except ValueError:
+                body = None
+            if not isinstance(body, dict):  # een lijst, null of getal is geen aanvraag van de pagina
                 self._json({"ok": False, "message": "ongeldige aanvraag"}, 400)
                 return
             actions = {"/api/start": controller.start, "/api/abort": controller.abort, "/api/reset": controller.reset}

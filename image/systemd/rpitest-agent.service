@@ -6,6 +6,7 @@ Wants=network-online.target bluetooth.service
 [Service]
 Type=simple
 # Draait als root: wifi (nmcli), bluetooth, dmesg en de GPIO-chip vragen die rechten.
+EnvironmentFile=-/etc/rpitest/env
 Environment=PYTHONUNBUFFERED=1
 WorkingDirectory=/var/lib/rpitest
 # Luistert op het vaste testadres; bestaat dat nog niet bij het opstarten, dan probeert systemd het opnieuw.

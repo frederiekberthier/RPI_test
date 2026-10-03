@@ -68,7 +68,7 @@ Systeemfouten: `eth_100`, `eth_errors`, `eth_slow`, `eth_loss`, `no_wifi`, `wifi
 `no_bt`, `bt_client_rx_dead`, `bt_client_tx_dead`, `server_no_wifi`, `server_no_bt`,
 `usb_slotN_dead|usb2|corrupt|slow` (N = 1..4), `usb_no_sticks`, `usb_overcurrent`, `usb_disconnect`,
 `power_undervolt`, `power_undervolt_history`, `power_hot`, `power_warm`, `power_throttle`, `power_cpu_error`,
-`power_ram_error`, `power_core_missing`, `power_no_sensor`.
+`power_ram_error`, `power_core_missing`, `power_no_sensor`, `power_dip`, `power_throttle_blip`.
 
 ## Stand van zaken
 Klaar: skelet, agent (JSON-RPC over HTTP), mock met foutinjectie, GPIO-checks, JSON/HTML-rapport,

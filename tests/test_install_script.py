@@ -42,12 +42,35 @@ echo "python3 $*" >> "$STATE/calls"
 if [ "${1:-}" = "-m" ] && [ "${2:-}" = "venv" ]; then
   target="${@: -1}"
   mkdir -p "$target/bin"
-  printf '#!/usr/bin/env bash\\necho "venv-python $*" >> "$STATE/calls"\\n[ -f "$STATE/import_broken" ] && exit 1\\nexit 0\\n' > "$target/bin/python"
+  printf '#!/usr/bin/env bash\\necho "venv-python $*" >> "$STATE/calls"\\ncase "$*" in *--list-chips*) echo "/dev/gpiochip0  label=pinctrl-rp1  lijnen=54";; *json.load*) grep -q phase || exit 1;; esac\\n[ -f "$STATE/import_broken" ] && exit 1\\nexit 0\\n' > "$target/bin/python"
   printf '#!/usr/bin/env bash\\necho "pip $*" >> "$STATE/calls"\\nexit 0\\n' > "$target/bin/pip"
   chmod +x "$target/bin/python" "$target/bin/pip"
   exit 0
 fi
+case "$*" in
+  *urllib.request*) [ "${FAIL_HTTP:-0}" = 1 ] && exit 1; exit 0 ;;  # internetcontrole zonder curl
+esac
 exec "$REAL_PYTHON" "$@"
+''',
+    "curl": '''
+echo "curl $*" >> "$STATE/calls"
+[ "${FAIL_HTTP:-0}" = 1 ] && exit 22
+case "$*" in
+  *api/state*) [ "${FAIL_UI:-0}" = 1 ] && exit 22; echo '{"phase": "idle"}' ;;
+  */rpc*) [ "${FAIL_AGENT:-0}" = 1 ] && exit 22; echo '{"result": "pong"}' ;;
+esac
+exit 0
+''',
+    "pgrep": '''
+[ "${BROWSER_RUNNING:-0}" = 1 ]
+''',
+    "ip": '''
+echo "ip $*" >> "$STATE/calls"
+case "$*" in
+  *"addr show dev"*) [ -f "$STATE/eth_ip" ] && cat "$STATE/eth_ip" ;;
+  *"route get"*) echo "10.0.0.9 dev ${ROUTE_DEV:-wlan0} src 10.0.0.1" ;;
+esac
+exit 0
 ''',
     "git": '''
 case " $* " in
@@ -64,8 +87,9 @@ exit 0
     "raspi-config": '''
 echo "raspi-config $*" >> "$STATE/calls"
 cmd="${2:-}"; arg="${3:-}"
+[ "${FAIL_RASPI:-}" = "$cmd" ] && exit 1
 case "$cmd" in
-  get_i2c|get_spi|get_serial_hw|get_serial_cons|get_autologin)
+  get_i2c|get_spi|get_serial_hw|get_serial_cons|get_autologin|get_blanking)
     [ "${RASPI_UNKNOWN:-0}" = 1 ] && exit 0
     default=0; [ "$cmd" = get_autologin ] && default=1
     cat "$STATE/raspi_$cmd" 2>/dev/null || echo "$default" ;;
@@ -74,6 +98,7 @@ case "$cmd" in
   do_serial_hw) echo "$arg" > "$STATE/raspi_get_serial_hw" ;;
   do_serial_cons) echo "$arg" > "$STATE/raspi_get_serial_cons" ;;
   do_boot_behaviour) echo 0 > "$STATE/raspi_get_autologin" ;;
+  do_blanking) echo "$arg" > "$STATE/raspi_get_blanking" ;;
   do_wifi_country) echo "$arg" > "$STATE/country" ;;
 esac
 exit 0
@@ -84,12 +109,30 @@ exit 0
 ''',
     "rfkill": 'echo "rfkill $*" >> "$STATE/calls"; exit 0',
     "chown": "exit 0",
+    # install (coreutils) zou -o/-g met echte gebruikers willen; hier alleen vastleggen en nabootsen
+    "install": """
+echo "install $*" >> "$STATE/calls"
+mode=""; dir=0; args=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -m) mode="$2"; shift 2 ;;
+    -o|-g) shift 2 ;;
+    -d) dir=1; shift ;;
+    *) args+=("$1"); shift ;;
+  esac
+done
+if [ "$dir" = 1 ]; then mkdir -p "${args[@]}"; exit $?; fi
+cp "${args[0]}" "${args[1]}" || exit 1
+[ -n "$mode" ] && chmod "$mode" "${args[1]}"
+exit 0
+""",
     "findmnt": "echo ext4",
     "systemctl": '''
 echo "systemctl $*" >> "$STATE/calls"
 case "${1:-}" in
   is-enabled) [ -f "$STATE/enabled_${@: -1}" ]; exit $? ;;
   enable) touch "$STATE/enabled_${2}" ;;
+  is-active) [ -f "$STATE/enabled_${@: -1}" ]; exit $? ;;
 esac
 exit 0
 ''',
@@ -111,7 +154,7 @@ exit 0
 
 # opdrachten die iets wijzigen: na een volledige installatie mogen die niet opnieuw voorkomen
 MUTATING = re.compile(
-    r"^(apt-get |python3 -m venv|pip |hostnamectl |rfkill |raspi-config nonint (do_|enable_)|"
+    r"^(apt-get |python3 -m venv|pip |install |hostnamectl |rfkill |raspi-config nonint (do_|enable_)|"
     r"nmcli connection (add|delete|up)|systemctl (enable|restart|try-restart|daemon-reload))")
 
 
@@ -123,10 +166,12 @@ class Sandbox:
         for directory in (self.state, self.bin, tmp_path / "systemd", tmp_path / "home"):
             directory.mkdir()
         for name, body in STUBS.items():
-            (self.bin / name).write_text("#!/usr/bin/env bash\n" + body.lstrip("\n"), newline="\n")
+            stub = self.bin / name
+            stub.write_text("#!/usr/bin/env bash\n" + body.lstrip("\n"), newline="\n")
+            stub.chmod(0o755)  # zonder uitvoerrechten slaat bash de stub op Linux over en draait het echte commando
         (tmp_path / "os-release").write_text("VERSION_CODENAME=trixie\n")
         (tmp_path / "hosts").write_text("127.0.0.1\tlocalhost\n127.0.1.1\traspberrypi\n")
-        self.packages = ["python3-venv", "python3-libgpiod", "iperf3", "iw", "rfkill", "bluez", "network-manager",
+        self.packages = ["python3-venv", "python3-setuptools", "python3-wheel", "python3-libgpiod", "iperf3", "iw", "rfkill", "bluez", "network-manager",
                          "dnsmasq-base", "curl", "chromium", "libraspberrypi-bin"]
 
     def env(self, **extra):
@@ -137,8 +182,10 @@ class Sandbox:
             "APP_DIR": (self.root / "app").as_posix(),
             "DATA_DIR": (self.root / "data").as_posix(),
             "SYSTEMD_DIR": (self.root / "systemd").as_posix(),
+            "ETC_DIR": (self.root / "etc").as_posix(),
             "HOSTS_FILE": (self.root / "hosts").as_posix(),
             "OS_RELEASE_FILE": (self.root / "os-release").as_posix(),
+            "SYS_ROOT": (self.root / "sysroot").as_posix(),
             "KIOSK_USER": "kiosk",
             "KIOSK_HOME": (self.root / "home").as_posix(),
             "REAL_PYTHON": Path(sys.executable).as_posix(),
@@ -150,8 +197,54 @@ class Sandbox:
         existing = self.state / "dpkg"
         existing.write_text("\n".join(names) + "\n")
 
+    def assert_stubs_are_used(self, env):
+        """Weiger te draaien als een systeemcommando niet naar de stub wijst: de echte zouden het systeem wijzigen."""
+        names = [name for name in STUBS if (self.bin / name).exists()]  # een test mag een stub bewust weghalen
+        probe = subprocess.run([BASH, "-c", "command -v " + " ".join(names)], env=env, capture_output=True, text=True,
+                               check=False)
+        found = probe.stdout.split()
+        wrong = [line for line in found if self.root.name not in line]
+        assert len(found) == len(names) and not wrong, f"stubs niet actief, echte commando's: {wrong or probe.stderr}"
+
+    def make_sysroot(self, eth="eth0", hdmi=True, wifi=True, bluetooth=True, model="Raspberry Pi 5 Model B Rev 1.0",
+                     i2c=False, spi=False, serial_console=False):
+        """Een nagebootste /sys, /proc, /dev en /boot voor preflight.sh en verify.sh."""
+        sysroot = self.root / "sysroot"
+        net = sysroot / "sys/class/net"
+        if eth:
+            (net / eth).mkdir(parents=True, exist_ok=True)
+        if wifi:
+            (net / "wlan0/wireless").mkdir(parents=True, exist_ok=True)
+        if bluetooth:
+            (sysroot / "sys/class/bluetooth/hci0").mkdir(parents=True, exist_ok=True)
+        if hdmi:
+            card = sysroot / "sys/class/drm/card1-HDMI-A-1"
+            card.mkdir(parents=True, exist_ok=True)
+            (card / "status").write_text("connected\n")
+        (sysroot / "proc/device-tree").mkdir(parents=True, exist_ok=True)
+        (sysroot / "proc/device-tree/model").write_bytes(model.encode() + b"\0")
+        (sysroot / "dev").mkdir(parents=True, exist_ok=True)
+        if i2c:
+            (sysroot / "dev/i2c-1").write_text("")
+        if spi:
+            (sysroot / "dev/spidev0.0").write_text("")
+        (sysroot / "boot/firmware").mkdir(parents=True, exist_ok=True)
+        cmdline = "console=serial0,115200 console=tty1 root=/dev/mmcblk0p2" if serial_console else "console=tty1 root=/dev/mmcblk0p2"
+        (sysroot / "boot/firmware/cmdline.txt").write_text(cmdline + "\n")
+        return sysroot
+
+    def add_stub(self, name, body="exit 0"):
+        stub = self.bin / name
+        stub.write_text("#!/usr/bin/env bash\n" + body + "\n", newline="\n")
+        stub.chmod(0o755)
+
     def run(self, *args, **env):
-        result = subprocess.run([BASH, (ROOT / "install.sh").as_posix(), *args], cwd=ROOT, env=self.env(**env),
+        return self.run_script("install.sh", *args, **env)
+
+    def run_script(self, script, *args, **env):
+        full_env = self.env(**env)
+        self.assert_stubs_are_used(full_env)
+        result = subprocess.run([BASH, (ROOT / script).as_posix(), *args], cwd=ROOT, env=full_env,
                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         result.clean = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout + result.stderr)
         return result
@@ -182,7 +275,7 @@ def test_check_mode_on_an_empty_pi_reports_missing_and_changes_nothing(box):
     assert result.returncode == 3, result.clean
     assert "ontbreekt" in result.clean and "ontbreken: python3-venv" in result.clean
     # alles ontbreekt echt: er is niets "onbekend" (regressie: cmp gaf 2 terug bij een ontbrekend bestand)
-    assert "[onbekend" not in result.clean and result.clean.count("[ontbreekt") == 9
+    assert "[onbekend" not in result.clean and result.clean.count("[ontbreekt") == 10
     assert "Voer uit: sudo ./install.sh server" in result.clean
     assert box.mutations() == []
     assert not (box.root / "app" / "REVISION").exists() and not list((box.root / "systemd").iterdir())
@@ -192,7 +285,7 @@ def test_check_mode_after_installing_says_everything_is_there(box):
     installed_state(box)
     result = box.run("server", "--check")
     assert result.returncode == 0, result.clean
-    assert result.clean.count("[aanwezig") == 9 and "ontbreekt " not in result.clean.replace("ontbreken", "")
+    assert result.clean.count("[aanwezig") == 10 and "ontbreekt " not in result.clean.replace("ontbreken", "")
 
 
 # ---------------------------------------------------------------- eerste installatie
@@ -204,7 +297,7 @@ def test_first_install_does_everything_in_a_sensible_order(box):
     install_call = next(c for c in calls if c.startswith("apt-get install -y python3-venv"))
     for pkg in ("python3-libgpiod", "iperf3", "iw", "bluez", "network-manager", "dnsmasq-base", "curl", "chromium"):
         assert pkg in install_call
-    assert any(c.startswith("python3 -m venv --system-site-packages") for c in calls)
+    assert any(c.startswith("python3 -m venv --clear --system-site-packages") for c in calls)
     assert sum(c.startswith("pip install --upgrade --force-reinstall --no-deps") for c in calls) == 1
     assert "hostnamectl set-hostname test-server" in calls
     for step in ("do_i2c 1", "do_spi 1", "do_serial_hw 1", "do_serial_cons 1", "do_wifi_country BE",
@@ -234,7 +327,7 @@ def test_second_run_recognises_everything_and_does_nothing(box):
     result = box.run("server", "--skip-preflight")
     assert result.returncode == 0, result.clean
     assert len(box.mutations()) == before, box.mutations()[before:]  # niets opnieuw gedaan
-    assert "Gedaan: 0 | al aanwezig: 9 | mislukt: 0" in result.clean
+    assert "Gedaan: 0 | al aanwezig: 10 | mislukt: 0" in result.clean
     assert "niets te doen" in result.clean and "sudo reboot" not in result.clean  # geen onnodige herstart-tip
 
 
@@ -261,7 +354,7 @@ def test_a_new_revision_replaces_only_the_software_and_restarts_the_service(box)
     assert "systemctl try-restart rpitest-ui.service" in new
     assert not [c for c in new if c.startswith(("apt-get", "hostnamectl", "nmcli connection"))]
     assert (box.root / "app" / "REVISION").read_text().strip() == "nieuwe-revisie-0001"
-    assert "Gedaan: 1 | al aanwezig: 8" in result.clean
+    assert "Gedaan: 1 | al aanwezig: 9" in result.clean
 
 
 def test_a_deleted_unit_file_counts_as_missing_not_unknown(box):
@@ -361,3 +454,124 @@ def test_bad_arguments(box):
     assert result.returncode != 0 and "server' of 'client" in result.clean
     help_text = box.run("--help")
     assert help_text.returncode == 0 and "--check" in help_text.clean and "sudo ./install.sh server" in help_text.clean
+
+
+# ---------------------------------------------------------------- issue #7: dezelfde interface in install en dienst
+
+def test_the_chosen_interface_is_written_for_the_services(box):
+    box.run("server", "--skip-preflight", ETH_IFACE="enp3s0")
+    env_file = box.root / "etc" / "env"
+    assert "ETH_IFACE=enp3s0" in env_file.read_text()
+    add = next(c for c in box.calls() if c.startswith("nmcli connection add"))
+    assert "ifname enp3s0" in add
+
+
+def test_an_outdated_interface_in_the_env_file_counts_as_missing(box):
+    installed_state(box)
+    (box.root / "etc" / "env").write_text("ETH_IFACE=eth9\n")
+    result = box.run("server", "--check")
+    assert result.returncode == 3 and "[ontbreekt ] Vast IP-adres" in result.clean
+
+
+def test_both_units_read_the_env_file():
+    for unit in sorted((ROOT / "image/systemd").glob("*.service")):
+        assert "EnvironmentFile=-/etc/rpitest/env" in unit.read_text(), unit.name
+
+
+# ---------------------------------------------------------------- issue #23: half aangemaakte venv
+
+def make_half_venv(box):
+    """Zoals `python3 -m venv` die halverwege faalt: bin/python bestaat, pip niet."""
+    bin_dir = box.root / "app" / "venv" / "bin"
+    bin_dir.mkdir(parents=True)
+    python = bin_dir / "python"
+    python.write_text("#!/usr/bin/env bash\nexit 0\n", newline="\n")
+    python.chmod(0o755)
+    return bin_dir
+
+
+def test_a_venv_without_pip_counts_as_not_installed(box):
+    make_half_venv(box)
+    result = box.run("server", "--check")
+    assert result.returncode == 3 and "[ontbreekt ] Software" in result.clean and "pip ontbreekt" in result.clean
+
+
+def test_a_half_created_venv_is_rebuilt_instead_of_skipped(box):
+    bin_dir = make_half_venv(box)
+    result = box.run("server", "--skip-preflight")
+    assert result.returncode == 0, result.clean
+    assert any(c.startswith("python3 -m venv --clear --system-site-packages") for c in box.calls())
+    assert (bin_dir / "pip").exists()
+
+
+# ---------------------------------------------------------------- issue #24: schermbeveiliging apart en herhaalbaar
+
+def test_a_failed_blanking_step_is_retried_on_the_next_run(box):
+    first = box.run("server", "--skip-preflight", FAIL_RASPI="do_blanking")
+    assert first.returncode == 1 and "niet gelukt: blanking" in first.clean
+    second = box.run("server", "--skip-preflight")
+    assert second.returncode == 0, second.clean
+    assert sum(c == "raspi-config nonint do_blanking 1" for c in box.calls()) == 2  # niet als 'aanwezig' overgeslagen
+    assert box.run("server", "--check").returncode == 0
+
+
+def test_autologin_and_blanking_are_reported_separately(box):
+    result = box.run("server", "--check")
+    assert "Automatisch inloggen op het bureaublad" in result.clean and "Schermbeveiliging uit" in result.clean
+
+
+def test_the_client_needs_neither_autologin_nor_blanking(box):
+    result = box.run("client", "--check")
+    assert "Schermbeveiliging" not in result.clean and "Automatisch inloggen" not in result.clean
+
+
+# ---------------------------------------------------------------- issue #25: eigenaar van ~/.config
+
+def test_config_directories_are_created_for_the_kiosk_user_not_for_root(box):
+    box.run("server", "--skip-preflight")
+    home = (box.root / "home").as_posix()
+    assert f"install -d -o kiosk -g kiosk {home}/.config {home}/.config/labwc" in box.calls()
+
+
+def test_an_existing_custom_autostart_is_backed_up_once(box):
+    autostart = box.root / "home" / ".config" / "labwc" / "autostart"
+    autostart.parent.mkdir(parents=True)
+    autostart.write_text("mijn-eigen-paneel &\n")
+    box.run("server", "--skip-preflight")
+    backup = autostart.with_name("autostart.bak")
+    assert backup.read_text() == "mijn-eigen-paneel &\n"
+    assert "kiosk.sh" in autostart.read_text()
+    box.run("server", "--skip-preflight", "--force")  # opnieuw toepassen mag de back-up niet overschrijven
+    assert backup.read_text() == "mijn-eigen-paneel &\n"
+
+
+# ---------------------------------------------------------------- issue #26: optioneel pakket
+
+def test_an_optional_package_that_cannot_be_installed_does_not_keep_the_pi_in_the_missing_state(box):
+    first = box.run("server", "--skip-preflight", FAIL_PACKAGE="libraspberrypi-bin")
+    assert first.returncode == 0, first.clean
+    second = box.run("server", "--skip-preflight")
+    assert second.returncode == 0 and "niets te doen" in second.clean, second.clean
+    check = box.run("server", "--check")
+    assert check.returncode == 0 and "optioneel" in check.clean and "libraspberrypi-bin" in check.clean
+
+
+def test_a_missing_optional_package_is_still_tried_during_a_normal_install(box):
+    box.run("server", "--skip-preflight")
+    assert "libraspberrypi-bin" in (box.state / "dpkg").read_text()
+
+
+def test_missing_required_packages_still_fail_the_check(box):
+    box.install_packages(*[p for p in box.packages if p != "iperf3"])
+    result = box.run("server", "--check")
+    assert result.returncode == 3 and "ontbreken: iperf3" in result.clean
+
+
+# ---------------------------------------------------------------- issue #27: geen PyPI nodig voor de installatie
+
+def test_the_build_does_not_need_pypi(box):
+    box.run("server", "--skip-preflight")
+    pip_calls = [c for c in box.calls() if c.startswith("pip install")]
+    assert len(pip_calls) == 1 and "--no-build-isolation" in pip_calls[0] and "--no-deps" in pip_calls[0]
+    apt_call = next(c for c in box.calls() if c.startswith("apt-get install -y python3-venv"))
+    assert "python3-setuptools" in apt_call and "python3-wheel" in apt_call  # de bouwhulp komt uit Debian

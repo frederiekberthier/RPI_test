@@ -251,3 +251,79 @@ def test_linuxops_stress_skips_ram_when_memory_is_unknown(tmp_path):
         assert ops.stress_result()["ram"] is None
     finally:
         ops.stress_stop()
+
+
+# ---------------------------------------------------------------- issue #3: rust-klok na afloop
+
+def loaded_sample(temp=60.0, freq=2400.0, **kw):
+    return {**sample(temp=temp, freq=freq, **kw), "loaded": True}
+
+
+def idle_sample(temp=55.0, freq=1500.0, **kw):
+    return {**sample(temp=temp, freq=freq, **kw), "loaded": False}
+
+
+def test_idle_clock_after_the_stress_run_is_not_judged_as_throttling():
+    # gezonde Pi: rust 1500 MHz (governor), onder belasting 2400, na afloop weer terug naar de rust-klok
+    samples = [sample(temp=48, freq=1500), loaded_sample(60), loaded_sample(66), loaded_sample(70), idle_sample(62)]
+    result = power.check_thermal(samples)
+    assert result.status is Status.PASS, result.summary
+    assert "100%" in result.summary  # alleen de metingen onder belasting tellen
+
+
+def test_a_real_clock_drop_under_load_is_still_reported():
+    samples = [sample(temp=48, freq=1500), loaded_sample(60), loaded_sample(70, freq=1000.0), idle_sample(62)]
+    assert power.check_thermal(samples).status is Status.WARN
+
+
+def test_run_marks_which_samples_were_taken_under_load(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(power, "evaluate", lambda samples, result: captured.setdefault("samples", samples) and [])
+    power.run(make_ctx())
+    flags = [s.get("loaded") for s in captured["samples"]]
+    assert flags[0] is None  # de meting in rust vóór de belasting
+    assert flags[1:-1] and all(flags[1:-1]) and flags[-1] is False  # de laatste meting is na afloop genomen
+
+
+# ---------------------------------------------------------------- issue #4: kleverige 'occurred'-bits
+
+UV_OCCURRED, FREQ_CAP_OCCURRED, THROTTLED_OCCURRED, SOFT_TEMP_OCCURRED = 1 << 16, 1 << 17, 1 << 18, 1 << 19
+
+
+def test_undervoltage_between_two_samples_is_caught_by_the_sticky_bit():
+    samples = [sample(), loaded_sample(), loaded_sample(throttled=UV_OCCURRED), loaded_sample(throttled=UV_OCCURRED),
+               idle_sample(throttled=UV_OCCURRED)]
+    result = power.check_supply(samples)
+    assert result.status is Status.FAIL and "tijdens de belasting" in result.summary
+
+
+def test_undervoltage_from_before_the_run_stays_a_warning():
+    samples = [sample(throttled=UV_OCCURRED), loaded_sample(throttled=UV_OCCURRED), idle_sample(throttled=UV_OCCURRED)]
+    result = power.check_supply(samples)
+    assert result.status is Status.WARN and "sinds het opstarten" in result.summary
+
+
+def test_soft_temperature_limit_between_two_samples_is_caught():
+    samples = [sample(), loaded_sample(), loaded_sample(throttled=SOFT_TEMP_OCCURRED), idle_sample(throttled=SOFT_TEMP_OCCURRED)]
+    result = power.check_thermal(samples)
+    assert result.status is Status.WARN and "throttling" in result.summary
+
+
+def test_throttle_history_from_before_the_run_is_not_blamed_on_this_run():
+    old = THROTTLED_OCCURRED | SOFT_TEMP_OCCURRED
+    samples = [sample(throttled=old), loaded_sample(throttled=old), idle_sample(throttled=old)]
+    assert power.check_thermal(samples).status is Status.PASS
+
+
+def test_a_throttle_caused_by_undervoltage_is_blamed_on_the_supply_not_the_temperature():
+    both = UV_OCCURRED | THROTTLED_OCCURRED | FREQ_CAP_OCCURRED
+    samples = [sample(), loaded_sample(), loaded_sample(throttled=both), idle_sample(throttled=both)]
+    assert power.check_supply(samples).status is Status.FAIL
+    assert power.check_thermal(samples).status is Status.PASS
+
+
+def test_dip_and_blip_faults_in_the_simulation():
+    assert results("power_dip")["power.supply"].status is Status.FAIL
+    assert results("power_dip")["power.thermal"].status is Status.PASS  # de oorzaak is de spanning
+    assert results("power_throttle_blip")["power.thermal"].status is Status.WARN
+    assert results("power_throttle_blip")["power.supply"].status is Status.PASS

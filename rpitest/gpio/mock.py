@@ -11,10 +11,32 @@ from __future__ import annotations
 from collections.abc import Iterable
 from dataclasses import dataclass
 
-from .ports import EXTERNAL_PULLUP, GpioPort, Pull
+from .ports import EXTERNAL_PULLUP, PINS, GpioPort, Pull
 
 SERVER, CLIENT = "S", "C"
 _OTHER = {SERVER: CLIENT, CLIENT: SERVER}
+_FAULT_SHAPES = {"stuck_low": ("zijde", "pin"), "stuck_high": ("zijde", "pin"), "bridge": ("zijde", "pin", "pin"),
+                 "open": ("pin",)}
+
+
+def _describe(shape: tuple[str, ...]) -> str:
+    return ":".join(f"<{part}>" for part in shape)
+
+
+def _side(value) -> str:
+    if value not in (SERVER, CLIENT):
+        raise ValueError(f"onbekende zijde {value!r}: gebruik S (TEST-SERVER) of C (TEST-CLIENT)")
+    return value
+
+
+def _pin(value) -> int:
+    try:
+        pin = int(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{value!r} is geen pinnummer") from None
+    if pin not in PINS:
+        raise ValueError(f"GPIO{pin} bestaat niet op de testkabel: kies GPIO{PINS[0]} tot en met GPIO{PINS[-1]}")
+    return pin
 
 
 @dataclass
@@ -61,16 +83,24 @@ class MockWiring:
         return self._ports[side]
 
     def add_fault(self, kind: str, *args) -> None:
-        if kind == "stuck_low":
-            self._stuck[(args[0], int(args[1]))] = 0
-        elif kind == "stuck_high":
-            self._stuck[(args[0], int(args[1]))] = 1
-        elif kind == "bridge":
-            self._bridges.append((args[0], int(args[1]), int(args[2])))
-        elif kind == "open":
-            self._opens.add(int(args[0]))
-        else:
+        """Gooit ValueError met een duidelijke melding bij een onbekende fout, een verkeerd aantal argumenten,
+        een onbekende zijde (S of C) of een pin buiten GPIO2 tot en met GPIO27."""
+        shape = _FAULT_SHAPES.get(kind)
+        if shape is None:
             raise ValueError(f"onbekende fout: {kind!r}")
+        if len(args) != len(shape):
+            raise ValueError(f"fout {kind!r} verwacht {_describe(shape)}, kreeg {len(args)} argument(en)")
+        values = [_side(a) if part == "zijde" else _pin(a) for part, a in zip(shape, args, strict=True)]
+        if kind == "stuck_low":
+            self._stuck[(values[0], values[1])] = 0
+        elif kind == "stuck_high":
+            self._stuck[(values[0], values[1])] = 1
+        elif kind == "bridge":
+            if values[1] == values[2]:
+                raise ValueError("fout 'bridge' verbindt twee verschillende pinnen")
+            self._bridges.append((values[0], values[1], values[2]))
+        else:
+            self._opens.add(values[0])
 
     def _neighbours(self, side: str, pin: int):
         if pin not in self._opens:

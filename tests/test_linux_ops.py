@@ -124,3 +124,162 @@ def test_bt_scan_forgets_target_first(tmp_path):
     found = LinuxOps(shell, tmp_path).bt_scan(5, "DC:A6:32:00:00:01")
     assert shell.calls[0] == ["bluetoothctl", "remove", "DC:A6:32:00:00:01"]
     assert found[0]["address"] == "DC:A6:32:00:00:01"
+
+
+# ---------------------------------------------------------------- issue #7: kies de juiste interface
+
+def add_iface(root, name, kind, speed="100", mac="aa:bb:cc:00:00:99"):
+    path = root / "sys/class/net" / name
+    (path / kind).mkdir(parents=True)
+    (path / "statistics").mkdir()
+    for fname, value in (("operstate", "up"), ("carrier", "1"), ("speed", speed), ("duplex", "full"), ("address", mac)):
+        (path / fname).write_text(value + "\n")
+
+
+def test_onboard_eth0_is_preferred_over_a_usb_ethernet_adapter(tmp_path):
+    root = make_sys(tmp_path)
+    add_iface(root, "enxa0cec8123456", "device", speed="100")  # sorteert vóór 'eth0'
+    info = LinuxOps(FakeShell([]), root).net_iface_info()
+    assert info["name"] == "eth0" and info["speed_mbit"] == 1000
+
+
+def test_the_interface_carrying_the_test_address_is_used_when_eth0_does_not_exist(tmp_path):
+    root = make_sys(tmp_path)
+    import shutil
+    shutil.rmtree(root / "sys/class/net/eth0")
+    add_iface(root, "enp1s0", "device")
+    add_iface(root, "enxa0cec8123456", "device")
+    ip_out = ("2: enp1s0    inet 10.0.0.5/24 brd 10.0.0.255 scope global\n"
+              "3: enxa0cec8123456    inet 192.168.77.1/24 scope global\n")
+    ops = LinuxOps(FakeShell([(("ip",), ShellResult(0, ip_out))]), root)
+    assert ops.net_iface_info()["name"] == "enxa0cec8123456"
+
+
+def test_an_explicit_interface_name_wins(tmp_path):
+    root = make_sys(tmp_path)
+    add_iface(root, "enxa0cec8123456", "device")
+    assert LinuxOps(FakeShell([]), root, eth_iface="enxa0cec8123456").net_iface_info()["name"] == "enxa0cec8123456"
+
+
+def test_onboard_wlan0_is_preferred_over_a_usb_wifi_adapter(tmp_path):
+    root = make_sys(tmp_path)
+    add_iface(root, "wlaa-usb", "wireless")  # sorteert vóór 'wlan0'
+    shell = FakeShell([(("iw",), ShellResult(0, "Not connected.\n")), (("ip",), ShellResult(0, ""))])
+    LinuxOps(shell, root).wifi_link()
+    assert shell.calls[0] == ["iw", "dev", "wlan0", "link"]
+
+
+def test_ip_address_parser():
+    from rpitest.system.parsers import parse_ip_addresses
+    text = "2: eth0    inet 192.168.77.2/24 brd 192.168.77.255 scope global eth0\n3: wlan0    inet 10.42.0.5/24 scope global\n"
+    assert parse_ip_addresses(text) == {"eth0": "192.168.77.2", "wlan0": "10.42.0.5"}
+
+
+# ---------------------------------------------------------------- issue #11: de fout van een falende tool blijft zichtbaar
+
+def test_a_failing_ping_reports_its_error_instead_of_unreadable_output(tmp_path):
+    shell = FakeShell([(("ping",), ShellResult(2, "", "ping: connect: Network is unreachable"))])
+    with pytest.raises(OpsError, match="Network is unreachable"):
+        LinuxOps(shell, tmp_path).ping("192.168.77.2", 5)
+
+
+def test_a_ping_with_total_loss_is_still_a_result_not_an_error(tmp_path):
+    out = "5 packets transmitted, 0 received, 100% packet loss, time 800ms\n"
+    result = LinuxOps(FakeShell([(("ping",), ShellResult(1, out))]), tmp_path).ping("192.168.77.2", 5)
+    assert result["loss_pct"] == 100.0
+
+
+def test_a_failing_iperf3_reports_its_error(tmp_path):
+    shell = FakeShell([(("iperf3",), ShellResult(1, "", "iperf3: error - unable to connect to server"))])
+    with pytest.raises(OpsError, match="unable to connect"):
+        LinuxOps(shell, tmp_path).iperf3_client("192.168.77.2", 5, reverse=False)
+
+
+def test_iw_link_on_a_missing_device_is_an_error_but_not_connected_is_a_result(tmp_path):
+    make_sys(tmp_path)
+    shell = FakeShell([(("iw",), ShellResult(1, "", "command failed: No such device (-19)")), (("ip",), ShellResult(0))])
+    with pytest.raises(OpsError, match="No such device"):
+        LinuxOps(shell, tmp_path).wifi_link()
+    shell = FakeShell([(("iw",), ShellResult(0, "Not connected.\n")), (("ip",), ShellResult(0))])
+    assert LinuxOps(shell, tmp_path).wifi_link()["connected"] is False
+    shell = FakeShell([(("iw",), ShellResult(1, "Not connected.\n")), (("ip",), ShellResult(0))])
+    assert LinuxOps(shell, tmp_path).wifi_link()["connected"] is False
+
+
+def test_a_bluetooth_scan_that_never_started_is_an_error_not_an_empty_list(tmp_path):
+    shell = FakeShell([(("bluetoothctl",), ShellResult(1, "", "No default controller available"))])
+    with pytest.raises(OpsError, match="No default controller"):
+        LinuxOps(shell, tmp_path).bt_scan(5)
+    started = "Discovery started\n[NEW] Device DC:A6:32:00:00:01 pi\n"  # een afsluitcode bij de time-out is geen fout
+    found = LinuxOps(FakeShell([(("bluetoothctl",), ShellResult(1, started))]), tmp_path).bt_scan(5)
+    assert [d["address"] for d in found] == ["DC:A6:32:00:00:01"]
+    assert LinuxOps(FakeShell([(("bluetoothctl",), ShellResult(0, "Discovery started\n"))]), tmp_path).bt_scan(5) == []
+
+
+# ---------------------------------------------------------------- issue #12: vaste taal en geen invoer
+
+def test_shell_runs_tools_in_the_c_locale_without_stdin(monkeypatch):
+    import sys
+    from rpitest.system.linux import Shell
+    monkeypatch.setenv("LC_ALL", "nl_BE.UTF-8")
+    monkeypatch.setenv("LANG", "nl_BE.UTF-8")
+    code = "import os, sys; print(os.environ.get('LC_ALL'), os.environ.get('LANG'), repr(sys.stdin.read()))"
+    result = Shell().run([sys.executable, "-c", code])
+    assert result.stdout.split() == ["C", "C", "''"], result
+
+
+# ---------------------------------------------------------------- issue #13: vreemde bytes in sysfs
+
+def test_usb_scan_survives_undecodable_descriptor_strings(tmp_path, monkeypatch):
+    from pathlib import Path
+    original = Path.read_text
+
+    def strict_utf8(self, encoding=None, errors=None):  # zoals de Pi: standaard strikt UTF-8 (op Windows is dat cp1252)
+        return original(self, encoding=encoding or "utf-8", errors=errors)
+    monkeypatch.setattr(Path, "read_text", strict_utf8)
+    device = tmp_path / "sys/bus/usb/devices/1-1"
+    device.mkdir(parents=True)
+    (device / "idVendor").write_text("0781\n")
+    (device / "idProduct").write_text("5567\n")
+    (device / "serial").write_bytes(b"AB\xed\xa0\x80CD\n")
+    (device / "product").write_bytes(b"Cruzer \xff Blade\n")
+    devices = LinuxOps(FakeShell([]), tmp_path).usb_scan()
+    assert devices[0]["vid"] == "0781" and devices[0]["serial"].startswith("AB") and "Cruzer" in devices[0]["product"]
+
+
+# ---------------------------------------------------------------- issue #14: opruimen
+
+def test_close_also_removes_the_hotspot_and_the_wifi_profile(tmp_path):
+    make_sys(tmp_path)
+    shell = FakeShell([(("nmcli",), ShellResult(0))])
+    LinuxOps(shell, tmp_path).close()
+    deleted = [c[-1] for c in shell.calls if c[:3] == ["nmcli", "connection", "delete"]]
+    assert config.WIFI_AP_PROFILE in deleted and config.WIFI_PROFILE in deleted
+
+
+def test_close_keeps_going_when_one_step_fails(tmp_path):
+    ops = LinuxOps(FakeShell([]), tmp_path)
+
+    def boom():
+        raise OpsError("kapot")
+    ops.stress_stop = boom
+    ops.close()  # mag niet crashen
+
+
+def test_a_killed_iperf3_server_is_reaped_and_its_pipe_closed(tmp_path):
+    import subprocess
+    import sys
+    ops = LinuxOps(FakeShell([]), tmp_path)
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], stderr=subprocess.PIPE, text=True)
+    # een proces dat SIGTERM/terminate negeert is op Windows niet na te bootsen; kill-pad direct afdwingen
+    proc.terminate = lambda: None
+    ops._iperf_server = proc
+    original_wait = proc.wait
+
+    def slow_wait(timeout=None):
+        if timeout is not None:
+            raise subprocess.TimeoutExpired("x", timeout)
+        return original_wait()
+    proc.wait = slow_wait
+    ops.iperf3_server_stop()
+    assert proc.poll() is not None and proc.stderr.closed

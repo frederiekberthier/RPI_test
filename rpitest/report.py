@@ -70,6 +70,10 @@ def save(report: Report, out_dir: Path) -> tuple[Path, Path]:
     serial = re.sub(r"[^A-Za-z0-9._-]", "_", str(report.client_info.get("serial", "onbekend")))
     stamp = report.started.replace(":", "").replace("-", "")
     base = out_dir / f"report-{serial}-{stamp}"
+    counter = 1
+    while base.with_suffix(".json").exists() or base.with_suffix(".html").exists():  # twee runs in dezelfde seconde
+        counter += 1
+        base = out_dir / f"report-{serial}-{stamp}-{counter}"
     json_path, html_path = base.with_suffix(".json"), base.with_suffix(".html")
     json_path.write_text(report.to_json(), encoding="utf-8")
     html_path.write_text(to_html(report), encoding="utf-8")
