@@ -145,7 +145,7 @@ check_app() {
     DETAIL="venv onvolledig (pip ontbreekt)"  # python3 -m venv maakt eerst python en pas dan pip
     return 1
   fi
-  if [ ! -x "$VENV/bin/python" ] || ! "$VENV/bin/python" -c "import rpitest, gpiod" 2>/dev/null; then
+  if [ ! -x "$VENV/bin/python" ] || ! "$VENV/bin/python" -I -c "import rpitest, gpiod" 2>/dev/null; then
     DETAIL="nog niet geïnstalleerd (of rpitest/gpiod niet te importeren)"
     return 1
   fi
@@ -164,7 +164,7 @@ apply_app() {
   # --no-build-isolation: setuptools komt uit het Debian-pakket (de venv ziet de systeem-pakketten), dus pip hoeft
   # niets van PyPI te halen; het pakket zelf heeft geen afhankelijkheden (--no-deps).
   "$VENV/bin/pip" install --upgrade --force-reinstall --no-deps --no-build-isolation "$REPO_DIR" || return 1
-  "$VENV/bin/python" -c "import rpitest, gpiod" || { warn "rpitest of gpiod niet te importeren na de installatie"; return 1; }
+  "$VENV/bin/python" -I -c "import rpitest, gpiod" || { warn "rpitest of gpiod niet te importeren na de installatie"; return 1; }
   repo_revision > "$APP_DIR/REVISION"
   APP_CHANGED=1
 }

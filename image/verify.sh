@@ -40,12 +40,12 @@ check_unit() {
 }
 
 echo "Software"
-if "$PY" -c "import rpitest, gpiod" 2>/dev/null; then
+if "$PY" -I -c "import rpitest, gpiod" 2>/dev/null; then
   pass "rpitest en gpiod importeren in $VENV"
 else
   fail "rpitest of gpiod niet te importeren in $VENV (installatie onvolledig, of libgpiod 1.x?)"
 fi
-chips="$("$PY" -m rpitest.agent --list-chips 2>&1)"
+chips="$("$PY" -I -m rpitest.agent --list-chips 2>&1)"
 if echo "$chips" | grep -Eq 'label=pinctrl-(rp1|bcm2711|bcm2835)'; then
   pass "GPIO-chip van de header gevonden: $(echo "$chips" | grep -E 'label=pinctrl-' | head -n 1)"
 else
@@ -77,9 +77,9 @@ fi
 
 echo
 echo "Pinnen vrij voor de test (I2C, SPI en seriële console uit)"
-[ -e /dev/i2c-1 ] && fail "I2C staat aan (/dev/i2c-1): houdt GPIO2 en 3 bezet" || pass "I2C uit"
-if ls /dev/spidev* >/dev/null 2>&1; then fail "SPI staat aan: houdt GPIO7 tot 11 bezet"; else pass "SPI uit"; fi
-if grep -Eq 'console=(serial0|ttyAMA0|ttyS0)' /boot/firmware/cmdline.txt 2>/dev/null; then
+[ -e "$SYS_ROOT/dev/i2c-1" ] && fail "I2C staat aan (/dev/i2c-1): houdt GPIO2 en 3 bezet" || pass "I2C uit"
+if ls "$SYS_ROOT"/dev/spidev* >/dev/null 2>&1; then fail "SPI staat aan: houdt GPIO7 tot 11 bezet"; else pass "SPI uit"; fi
+if grep -Eq 'console=(serial0|ttyAMA0|ttyS0)' "$SYS_ROOT/boot/firmware/cmdline.txt" 2>/dev/null; then
   fail "seriële console staat aan: houdt GPIO14 en 15 bezet"
 else
   pass "seriële console uit"
@@ -105,7 +105,7 @@ if [ "$ROLE" = server ]; then
     || note "rapportmap $DATA_DIR/reports bestaat nog niet (wordt bij de eerste run gemaakt)"
   kiosk_user="${KIOSK_USER:-${SUDO_USER:-}}"
   if [ -n "$kiosk_user" ]; then
-    home="$(getent passwd "$kiosk_user" | cut -d: -f6)"
+    home="${KIOSK_HOME:-$(getent passwd "$kiosk_user" | cut -d: -f6)}"
     if grep -q "$APP_DIR/kiosk.sh" "$home/.config/labwc/autostart" 2>/dev/null; then
       pass "autostart van de kioskbrowser staat in $home/.config/labwc/autostart"
     else

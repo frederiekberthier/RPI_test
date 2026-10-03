@@ -42,7 +42,7 @@ echo "python3 $*" >> "$STATE/calls"
 if [ "${1:-}" = "-m" ] && [ "${2:-}" = "venv" ]; then
   target="${@: -1}"
   mkdir -p "$target/bin"
-  printf '#!/usr/bin/env bash\\necho "venv-python $*" >> "$STATE/calls"\\ncase "$*" in *--list-chips*) echo "/dev/gpiochip0  label=pinctrl-rp1  lijnen=54";; esac\\n[ -f "$STATE/import_broken" ] && exit 1\\nexit 0\\n' > "$target/bin/python"
+  printf '#!/usr/bin/env bash\\necho "venv-python $*" >> "$STATE/calls"\\ncase "$*" in *--list-chips*) echo "/dev/gpiochip0  label=pinctrl-rp1  lijnen=54";; *json.load*) grep -q phase || exit 1;; esac\\n[ -f "$STATE/import_broken" ] && exit 1\\nexit 0\\n' > "$target/bin/python"
   printf '#!/usr/bin/env bash\\necho "pip $*" >> "$STATE/calls"\\nexit 0\\n' > "$target/bin/pip"
   chmod +x "$target/bin/python" "$target/bin/pip"
   exit 0
