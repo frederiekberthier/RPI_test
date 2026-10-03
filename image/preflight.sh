@@ -14,7 +14,7 @@ need_role "$ROLE"
 printf 'Voorcontrole voor de %s\n\n' "$ROLE"
 
 echo "Besturingssysteem en hardware"
-codename="$(. /etc/os-release 2>/dev/null && echo "${VERSION_CODENAME:-}")"
+codename="$(. "$OS_RELEASE_FILE" 2>/dev/null && echo "${VERSION_CODENAME:-}")"
 if [ "$codename" = trixie ]; then
   pass "Raspberry Pi OS Trixie"
 else
@@ -26,7 +26,7 @@ else
   note "geen 64-bit systeem ($(uname -m)); 64-bit wordt aanbevolen"
 fi
 
-model="$({ tr -d '\0' </proc/device-tree/model; } 2>/dev/null)"  # accolades: ook de fout van het openen verdwijnt
+model="$({ tr -d '\0' <"$SYS_ROOT/proc/device-tree/model"; } 2>/dev/null)"  # accolades: ook de fout van het openen verdwijnt
 case "$ROLE:$model" in
   server:*"Raspberry Pi 5"*) pass "model: $model" ;;
   server:*) note "de TEST-SERVER hoort een Pi 5 te zijn; gevonden: ${model:-onbekend} (niet getest)" ;;
@@ -58,13 +58,13 @@ require_command curl "wordt bij de installatie bijgeplaatst" note
 
 echo
 echo "Netwerk"
-if [ -e "/sys/class/net/$ETH_IFACE" ]; then
+if [ -e "$SYS_ROOT/sys/class/net/$ETH_IFACE" ]; then
   pass "ethernetpoort $ETH_IFACE aanwezig"
 else
   fail "ethernetpoort $ETH_IFACE niet gevonden; geef de juiste naam met ETH_IFACE=<naam>"
 fi
 for host in deb.debian.org archive.raspberrypi.com; do
-  if curl -fsS -m 8 -o /dev/null "https://$host/" 2>/dev/null; then
+  if http_reachable "https://$host/"; then
     pass "internet: $host bereikbaar"
   else
     fail "$host niet bereikbaar (internet is nodig voor de pakketten); niet via $ETH_IFACE als dat de testkabel wordt"
@@ -92,7 +92,7 @@ if [ "$ROLE" = server ]; then
     fail "labwc ontbreekt: gebruik Raspberry Pi OS met bureaublad (niet Lite)"
   fi
   hdmi=0
-  for status in /sys/class/drm/card*-HDMI-A-*/status; do
+  for status in "$SYS_ROOT"/sys/class/drm/card*-HDMI-A-*/status; do
     [ -r "$status" ] && [ "$(cat "$status")" = connected ] && hdmi=1
   done
   if [ "$hdmi" -eq 1 ]; then
@@ -106,12 +106,12 @@ if [ "$ROLE" = server ]; then
   else
     note "nog geen gebruiker voor het scherm bekend: start de installatie met sudo vanuit je gebruiker, of geef KIOSK_USER=<naam>"
   fi
-  if ls /sys/class/net/*/wireless >/dev/null 2>&1 || ls /sys/class/net/*/phy80211 >/dev/null 2>&1; then
+  if ls "$SYS_ROOT"/sys/class/net/*/wireless >/dev/null 2>&1 || ls "$SYS_ROOT"/sys/class/net/*/phy80211 >/dev/null 2>&1; then
     pass "wifi-interface aanwezig (nodig voor het accesspoint)"
   else
     note "geen wifi-interface: de wifi-test wordt overgeslagen"
   fi
-  if ls /sys/class/bluetooth/hci* >/dev/null 2>&1; then
+  if ls "$SYS_ROOT"/sys/class/bluetooth/hci* >/dev/null 2>&1; then
     pass "bluetooth-controller aanwezig"
   else
     note "geen bluetooth-controller: de bluetooth-test wordt overgeslagen"

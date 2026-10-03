@@ -15,6 +15,7 @@ SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
 ETC_DIR="${ETC_DIR:-/etc/rpitest}"
 HOSTS_FILE="${HOSTS_FILE:-/etc/hosts}"
 OS_RELEASE_FILE="${OS_RELEASE_FILE:-/etc/os-release}"
+SYS_ROOT="${SYS_ROOT:-}"  # voorvoegsel voor /sys, /proc, /dev en /boot (alleen voor tests)
 ETH_IFACE="${ETH_IFACE:-eth0}"
 WIFI_COUNTRY="${WIFI_COUNTRY:-BE}"
 NM_PROFILE=rpitest
@@ -68,6 +69,17 @@ need_trixie() {
 # Waarden uit de Python-configuratie halen, zodat IP-adressen maar op een plaats staan (rpitest/config.py).
 config_value() {
   (cd "$REPO_DIR" && python3 -c "from rpitest import config; print(config.$1)")
+}
+
+# Is deze https-site bereikbaar? Met curl als dat er is, anders met Python (is altijd aanwezig). Zonder die
+# terugval gaf een Pi zonder curl twee 'niet bereikbaar'-fouten en kwam curl er via install.sh nooit bij.
+http_reachable() {
+  local url="$1"
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsS -m 8 -o /dev/null "$url" 2>/dev/null
+  else
+    python3 -c 'import sys, urllib.request; urllib.request.urlopen(sys.argv[1], timeout=8)' "$url" 2>/dev/null
+  fi
 }
 
 # Is dit Debian-pakket geïnstalleerd?

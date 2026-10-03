@@ -42,12 +42,35 @@ echo "python3 $*" >> "$STATE/calls"
 if [ "${1:-}" = "-m" ] && [ "${2:-}" = "venv" ]; then
   target="${@: -1}"
   mkdir -p "$target/bin"
-  printf '#!/usr/bin/env bash\\necho "venv-python $*" >> "$STATE/calls"\\n[ -f "$STATE/import_broken" ] && exit 1\\nexit 0\\n' > "$target/bin/python"
+  printf '#!/usr/bin/env bash\\necho "venv-python $*" >> "$STATE/calls"\\ncase "$*" in *--list-chips*) echo "/dev/gpiochip0  label=pinctrl-rp1  lijnen=54";; esac\\n[ -f "$STATE/import_broken" ] && exit 1\\nexit 0\\n' > "$target/bin/python"
   printf '#!/usr/bin/env bash\\necho "pip $*" >> "$STATE/calls"\\nexit 0\\n' > "$target/bin/pip"
   chmod +x "$target/bin/python" "$target/bin/pip"
   exit 0
 fi
+case "$*" in
+  *urllib.request*) [ "${FAIL_HTTP:-0}" = 1 ] && exit 1; exit 0 ;;  # internetcontrole zonder curl
+esac
 exec "$REAL_PYTHON" "$@"
+''',
+    "curl": '''
+echo "curl $*" >> "$STATE/calls"
+[ "${FAIL_HTTP:-0}" = 1 ] && exit 22
+case "$*" in
+  *api/state*) [ "${FAIL_UI:-0}" = 1 ] && exit 22; echo '{"phase": "idle"}' ;;
+  */rpc*) [ "${FAIL_AGENT:-0}" = 1 ] && exit 22; echo '{"result": "pong"}' ;;
+esac
+exit 0
+''',
+    "pgrep": '''
+[ "${BROWSER_RUNNING:-0}" = 1 ]
+''',
+    "ip": '''
+echo "ip $*" >> "$STATE/calls"
+case "$*" in
+  *"addr show dev"*) [ -f "$STATE/eth_ip" ] && cat "$STATE/eth_ip" ;;
+  *"route get"*) echo "10.0.0.9 dev ${ROUTE_DEV:-wlan0} src 10.0.0.1" ;;
+esac
+exit 0
 ''',
     "git": '''
 case " $* " in
@@ -109,6 +132,7 @@ echo "systemctl $*" >> "$STATE/calls"
 case "${1:-}" in
   is-enabled) [ -f "$STATE/enabled_${@: -1}" ]; exit $? ;;
   enable) touch "$STATE/enabled_${2}" ;;
+  is-active) [ -f "$STATE/enabled_${@: -1}" ]; exit $? ;;
 esac
 exit 0
 ''',
@@ -161,6 +185,7 @@ class Sandbox:
             "ETC_DIR": (self.root / "etc").as_posix(),
             "HOSTS_FILE": (self.root / "hosts").as_posix(),
             "OS_RELEASE_FILE": (self.root / "os-release").as_posix(),
+            "SYS_ROOT": (self.root / "sysroot").as_posix(),
             "KIOSK_USER": "kiosk",
             "KIOSK_HOME": (self.root / "home").as_posix(),
             "REAL_PYTHON": Path(sys.executable).as_posix(),
@@ -174,16 +199,52 @@ class Sandbox:
 
     def assert_stubs_are_used(self, env):
         """Weiger te draaien als een systeemcommando niet naar de stub wijst: de echte zouden het systeem wijzigen."""
-        probe = subprocess.run([BASH, "-c", "command -v " + " ".join(STUBS)], env=env, capture_output=True, text=True,
+        names = [name for name in STUBS if (self.bin / name).exists()]  # een test mag een stub bewust weghalen
+        probe = subprocess.run([BASH, "-c", "command -v " + " ".join(names)], env=env, capture_output=True, text=True,
                                check=False)
         found = probe.stdout.split()
         wrong = [line for line in found if self.root.name not in line]
-        assert len(found) == len(STUBS) and not wrong, f"stubs niet actief, echte commando's: {wrong or probe.stderr}"
+        assert len(found) == len(names) and not wrong, f"stubs niet actief, echte commando's: {wrong or probe.stderr}"
+
+    def make_sysroot(self, eth="eth0", hdmi=True, wifi=True, bluetooth=True, model="Raspberry Pi 5 Model B Rev 1.0",
+                     i2c=False, spi=False, serial_console=False):
+        """Een nagebootste /sys, /proc, /dev en /boot voor preflight.sh en verify.sh."""
+        sysroot = self.root / "sysroot"
+        net = sysroot / "sys/class/net"
+        if eth:
+            (net / eth).mkdir(parents=True, exist_ok=True)
+        if wifi:
+            (net / "wlan0/wireless").mkdir(parents=True, exist_ok=True)
+        if bluetooth:
+            (sysroot / "sys/class/bluetooth/hci0").mkdir(parents=True, exist_ok=True)
+        if hdmi:
+            card = sysroot / "sys/class/drm/card1-HDMI-A-1"
+            card.mkdir(parents=True, exist_ok=True)
+            (card / "status").write_text("connected\n")
+        (sysroot / "proc/device-tree").mkdir(parents=True, exist_ok=True)
+        (sysroot / "proc/device-tree/model").write_bytes(model.encode() + b"\0")
+        (sysroot / "dev").mkdir(parents=True, exist_ok=True)
+        if i2c:
+            (sysroot / "dev/i2c-1").write_text("")
+        if spi:
+            (sysroot / "dev/spidev0.0").write_text("")
+        (sysroot / "boot/firmware").mkdir(parents=True, exist_ok=True)
+        cmdline = "console=serial0,115200 console=tty1 root=/dev/mmcblk0p2" if serial_console else "console=tty1 root=/dev/mmcblk0p2"
+        (sysroot / "boot/firmware/cmdline.txt").write_text(cmdline + "\n")
+        return sysroot
+
+    def add_stub(self, name, body="exit 0"):
+        stub = self.bin / name
+        stub.write_text("#!/usr/bin/env bash\n" + body + "\n", newline="\n")
+        stub.chmod(0o755)
 
     def run(self, *args, **env):
+        return self.run_script("install.sh", *args, **env)
+
+    def run_script(self, script, *args, **env):
         full_env = self.env(**env)
         self.assert_stubs_are_used(full_env)
-        result = subprocess.run([BASH, (ROOT / "install.sh").as_posix(), *args], cwd=ROOT, env=full_env,
+        result = subprocess.run([BASH, (ROOT / script).as_posix(), *args], cwd=ROOT, env=full_env,
                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120)
         result.clean = re.sub(r"\x1b\[[0-9;]*m", "", result.stdout + result.stderr)
         return result
