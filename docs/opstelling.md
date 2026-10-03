@@ -78,43 +78,21 @@ Rechtstreekse UTP-kabel tussen de twee ethernetpoorten, zonder crossoverkabel. V
 | testpi | 192.168.77.1 |
 | DUT | 192.168.77.2 |
 
-Op Raspberry Pi OS Trixie (NetworkManager). Dit zijn de commando's uit mijn geheugen, controleer ze bij de eerste keer:
-```
-sudo nmcli con add type ethernet ifname eth0 con-name rpitest \
-     ipv4.method manual ipv4.addresses 192.168.77.1/24 ipv6.method disabled
-sudo nmcli con up rpitest
-```
-Op de DUT-image hetzelfde met `192.168.77.2/24`. De adressen staan in `rpitest/config.py`.
+Het vaste adres wordt door `install.sh` ingesteld (als laatste stap, via NetworkManager). De adressen staan in
+`rpitest/config.py`; de scripts lezen ze daar.
 
 ## Software
 
-**Automatisch:** de scripts in `image/` doen dit alles voor je en richten ook het scherm en de diensten in; zie [image.md](image.md). Hieronder staat de handmatige route.
+Alles wordt geïnstalleerd en ingesteld met **één script**: `sudo ./install.sh tester` voor de testpi en
+`sudo ./install.sh dut` voor de tester-SD van de te testen Pi. Het installeert de pakketten, de software, het scherm en de
+diensten, zet I2C, SPI en de seriële console uit (die houden GPIO-pinnen bezet), stelt het wifi-land in en zet het
+vaste IP-adres. Met `--check` zie je eerst wat er al op de Pi staat.
 
-Basis: **Raspberry Pi OS Lite (Trixie, 64-bit)**, voor beide Pi's. Bookworm werkt niet, want die levert libgpiod 1.x.
+Het stappenplan staat in de [README](../README.md#installeren-op-een-pi-stappenplan); het draaiboek voor de eerste keer in
+[eerste-installatie.md](eerste-installatie.md). Basis is **Raspberry Pi OS Trixie, 64-bit**; Bookworm werkt niet, want die
+levert libgpiod 1.x.
 
-```
-sudo apt install python3-libgpiod git iperf3 iw rfkill bluez network-manager
-git clone https://github.com/frederiekberthier/RPI_test.git && cd RPI_test
-python3 -m venv --system-site-packages .venv && . .venv/bin/activate
-pip install -e .
-```
-
-Zorg dat I2C, SPI en de seriële poort uit staan, anders houden ze pinnen bezet (bv. `sudo raspi-config nonint do_i2c 1`, `do_spi 1`, `do_serial_hw 1`, `do_serial_cons 1`, daarna herstarten).
-
-Wifi- en bluetoothopdrachten (`nmcli`, `bluetoothctl`) vragen meer rechten dan GPIO. Start daarom
-zowel de agent als de test met `sudo` (bv. `sudo .venv/bin/python -m rpitest`).
-
-**Op de DUT:**
-```
-sudo .venv/bin/python -m rpitest.agent --list-chips   # welke gpiochips zijn er?
-sudo .venv/bin/python -m rpitest.agent                # start de agent op 192.168.77.2:8765
-```
-
-**Op de testpi:**
-```
-sudo .venv/bin/python -m rpitest.agent --list-chips
-sudo .venv/bin/python -m rpitest                      # voert de volledige test uit en maakt het rapport
-```
+De tests starten daarna vanzelf: de testpi toont het scherm met de startknop en de DUT draait de agent. Zie [image.md](image.md).
 
 ## Netwerk, wifi en bluetooth
 
@@ -131,7 +109,7 @@ sudo .venv/bin/python -m rpitest                      # voert de volledige test 
 | `bt.transmit` | DUT is zichtbaar, testpi moet hem zien | |
 
 Aandachtspunten:
-- **Wifi-land instellen** op beide Pi's (`sudo raspi-config nonint do_wifi_country BE`). Zonder land
+- **Wifi-land** staat op beide Pi's op `BE` (door `install.sh`; ander land met `WIFI_COUNTRY=<code>`). Zonder land
   kan het accesspoint op 5 GHz niet starten.
 - **De testpi gebruikt zijn wifi als accesspoint**, en zijn ethernetpoort voor de DUT. Beheer van
   de testpi gebeurt dus met toetsenbord en scherm, of met een extra USB-ethernetadapter.

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Gedeelde functies voor install-tester.sh en install-dut.sh. Wordt gesourced, niet los gestart.
+# Gedeelde functies en vaste afspraken voor install.sh, preflight.sh, verify.sh en diagnose.sh.
+# Wordt gesourced, niet los gestart. Alle paden zijn overschrijfbaar via de omgeving (voor tests).
 
 log()  { printf '\033[1;34m==>\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m!! \033[0m %s\n' "$*" >&2; }
@@ -7,9 +8,12 @@ die()  { printf '\033[1;31mXX \033[0m %s\n' "$*" >&2; exit 1; }
 
 IMAGE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$IMAGE_DIR/.." && pwd)"
-APP_DIR=/opt/rpitest
+APP_DIR="${APP_DIR:-/opt/rpitest}"
 VENV="$APP_DIR/venv"
-DATA_DIR=/var/lib/rpitest
+DATA_DIR="${DATA_DIR:-/var/lib/rpitest}"
+SYSTEMD_DIR="${SYSTEMD_DIR:-/etc/systemd/system}"
+HOSTS_FILE="${HOSTS_FILE:-/etc/hosts}"
+OS_RELEASE_FILE="${OS_RELEASE_FILE:-/etc/os-release}"
 ETH_IFACE="${ETH_IFACE:-eth0}"
 WIFI_COUNTRY="${WIFI_COUNTRY:-BE}"
 NM_PROFILE=rpitest
@@ -54,7 +58,7 @@ need_root() {
 need_trixie() {
   # libgpiod 2.x zit pas in Debian 13 (Trixie); Bookworm levert 1.x met een andere API.
   local codename
-  codename="$(. /etc/os-release && echo "${VERSION_CODENAME:-}")"
+  codename="$(. "$OS_RELEASE_FILE" 2>/dev/null && echo "${VERSION_CODENAME:-}")"
   if [ "$codename" != "trixie" ]; then
     die "dit werkt alleen op Raspberry Pi OS Trixie (gevonden: ${codename:-onbekend}); Bookworm heeft libgpiod 1.x"
   fi
@@ -65,56 +69,19 @@ config_value() {
   (cd "$REPO_DIR" && python3 -c "from rpitest import config; print(config.$1)")
 }
 
-install_packages() {
-  log "Pakketten installeren"
-  apt-get update
-  # libraspberrypi-bin levert vcgencmd (onderspanning, temperatuur); dnsmasq-base is nodig voor de wifi-hotspot.
-  apt-get install -y python3-venv python3-libgpiod iperf3 iw rfkill bluez network-manager \
-    dnsmasq-base curl "$@"
-  apt-get install -y libraspberrypi-bin || warn "libraspberrypi-bin niet installeerbaar: vcgencmd ontbreekt"
+# Is dit Debian-pakket geïnstalleerd?
+package_installed() {
+  [ "$(dpkg-query -W -f='${Status}' "$1" 2>/dev/null)" = "install ok installed" ]
 }
 
-install_app() {
-  log "Software installeren in $VENV"
-  mkdir -p "$APP_DIR" "$DATA_DIR"
-  # --system-site-packages: de module 'gpiod' komt uit het Debian-pakket python3-libgpiod
-  python3 -m venv --system-site-packages "$VENV"
-  "$VENV/bin/pip" install --upgrade "$REPO_DIR"
-  install -m 0755 "$IMAGE_DIR/kiosk.sh" "$APP_DIR/kiosk.sh"
-}
-
-install_unit() {
-  local unit="$1"
-  install -m 0644 "$IMAGE_DIR/systemd/$unit" "/etc/systemd/system/$unit"
-  systemctl daemon-reload
-  systemctl enable "$unit"
-  systemctl restart "$unit" || warn "$unit startte niet meteen; zie: journalctl -u $unit"
-}
-
-# Vast IP-adres op de rechtstreekse kabel (geen gateway: dit is alleen de testkabel).
-set_static_ip() {
-  local address="$1"
-  log "Vast IP-adres $address/24 op $ETH_IFACE"
-  # zonder grep -q: dat sluit de pijp vroeg en geeft met 'pipefail' een vals negatief resultaat
-  if nmcli -t -f NAME connection show | grep -x "$NM_PROFILE" >/dev/null; then
-    nmcli connection delete "$NM_PROFILE" >/dev/null
+# Welke versie van de software staat in deze map? Een uitgecheckte, ongewijzigde commit geeft een vaste
+# waarde; bij onopgeslagen wijzigingen (of zonder git) is de waarde nooit gelijk aan de vorige, zodat
+# er dan altijd opnieuw geïnstalleerd wordt.
+repo_revision() {
+  local git=(git -c "safe.directory=$REPO_DIR" -C "$REPO_DIR") rev
+  rev="$("${git[@]}" rev-parse HEAD 2>/dev/null)" || { echo "onbekend-$(date +%s)"; return; }
+  if [ -n "$("${git[@]}" status --porcelain 2>/dev/null)" ]; then
+    rev="$rev-gewijzigd-$(date +%s)"
   fi
-  nmcli connection add type ethernet ifname "$ETH_IFACE" con-name "$NM_PROFILE" \
-    ipv4.method manual ipv4.addresses "$address/24" ipv6.method disabled \
-    connection.autoconnect yes >/dev/null
-  nmcli connection up "$NM_PROFILE" 2>/dev/null || warn "profiel nog niet actief (geen kabel aangesloten?); start vanzelf bij link"
-}
-
-# I2C, SPI en de seriële poort houden GPIO-pinnen bezet; die moeten vrij zijn voor de test.
-free_gpio_pins() {
-  log "I2C, SPI en seriële console uitschakelen"
-  for step in "do_i2c 1" "do_spi 1" "do_serial_hw 1" "do_serial_cons 1"; do
-    raspi-config nonint $step || warn "raspi-config nonint $step mislukte"
-  done
-}
-
-set_wifi_country() {
-  log "Wifi-land $WIFI_COUNTRY instellen (nodig voor het 5 GHz-accesspoint)"
-  raspi-config nonint do_wifi_country "$WIFI_COUNTRY" || warn "wifi-land instellen mislukte"
-  rfkill unblock wifi || true
+  echo "$rev"
 }

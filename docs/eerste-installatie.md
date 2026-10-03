@@ -35,7 +35,7 @@ Plan ongeveer een uur, de bedrading niet meegerekend.
    nog niet hebt aangesloten. Bij `[FOUT]` staat er wat je moet doen; los dat op en draai het opnieuw.
 5. **Installeren** (5 tot 10 minuten):
    ```
-   sudo ./image/install-tester.sh
+   sudo ./install.sh tester
    sudo reboot
    ```
 6. Na de herstart logt de Pi vanzelf in en toont het scherm **"Raspberry Pi tester"** met **"Wachten op de DUT…"**.
@@ -54,7 +54,7 @@ Lukt de natest of het scherm niet, ga dan naar stap 5 en stuur de diagnose.
 2. Start de DUT (nog **zonder** testkabels) en haal de software binnen zoals bij de testpi.
 3. ```
    ./image/preflight.sh dut
-   sudo ./image/install-dut.sh
+   sudo ./install.sh dut
    sudo reboot
    sudo ./image/verify.sh dut        # na de herstart
    ```
@@ -108,6 +108,6 @@ USB-paden) en pas ik de code aan.
 Als alles werkt:
 
 1. Stel de drempels in `rpitest/config.py` bij op basis van wat de bekend goede Pi haalde (snelheden, signaalsterkte, temperatuur).
-2. Maak de DUT-SD alleen-lezen: `sudo ./image/install-dut.sh --readonly`, herstart, en controleer met `verify.sh dut`
+2. Maak de DUT-SD alleen-lezen: `sudo ./install.sh dut --readonly`, herstart, en controleer met `verify.sh dut`
    (je ziet dan een `[let op]` dat de overlay actief is: zo hoort het).
 3. Kloon de SD ([image.md](image.md)) zodat je meerdere identieke tester-SD's hebt.

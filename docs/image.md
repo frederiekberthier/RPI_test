@@ -27,38 +27,57 @@ uitvoer van alle tools om terug te sturen) horen daarbij; ze wijzigen niets.
 
 Bookworm werkt niet: dat levert libgpiod 1.x. De scripts weigeren te draaien op iets anders dan Trixie.
 
-## De testpi maken
+## Installeren: stappenplan
 
-1. Schrijf Raspberry Pi OS (Trixie, 64-bit, met bureaublad) met Raspberry Pi Imager. Maak een gebruiker aan, stel wifi in en zet SSH aan.
-2. Start de Pi, zorg voor internet en haal de software binnen:
+De stappen zijn voor de testpi en de DUT-SD hetzelfde; alleen het woord `tester` of `dut` verschilt. Het volledige
+stappenplan staat ook in de [README](../README.md#installeren-op-een-pi-stappenplan).
+
+1. Schrijf Raspberry Pi OS **Trixie, 64-bit** naar een SD met Raspberry Pi Imager: **met bureaublad** voor de testpi,
+   **Lite** voor de DUT-SD (een kleine SD van 8 tot 16 GB kloont sneller). Stel gebruiker, wifi (land `BE`) en SSH in.
+2. Start de Pi met internet via wifi en haal de software binnen:
    ```
+   sudo apt install -y git
    git clone https://github.com/frederiekberthier/RPI_test.git
    cd RPI_test
-   sudo ./image/install-tester.sh
-   sudo reboot
    ```
-3. Het script installeert de pakketten, de software (`/opt/rpitest`), zet automatisch inloggen aan, laat de kioskbrowser
-   starten, installeert de dienst `rpitest-ui` en zet als laatste het vaste IP-adres op de ethernetpoort.
-   Via `KIOSK_USER=<naam>` en `WIFI_COUNTRY=BE` stel je de gebruiker en het wifi-land in.
+3. Kijk wat er al staat (wijzigt niets): `sudo ./install.sh tester --check`
+4. Installeer: `sudo ./install.sh tester` (voor de DUT: `sudo ./install.sh dut`)
+5. Herstart: `sudo reboot`. Het scherm van de testpi start dan vanzelf.
+6. Controleer: `sudo ./image/verify.sh tester` (of `dut`)
 
-Na de herstart start het scherm vanzelf. Opnieuw uitvoeren van het script werkt de software bij.
+**Wat `install.sh` doet**, in deze volgorde en alleen voor wat nog ontbreekt of verouderd is:
 
-## De DUT-SD maken
+| Onderdeel | Testpi | DUT |
+|---|---|---|
+| voorcontrole (`image/preflight.sh`) | ja | ja |
+| pakketten via `apt` (alleen de ontbrekende) | ja, plus `chromium` | ja |
+| software in `/opt/rpitest/venv` | ja | ja |
+| hostnaam `rpitest-tester` / `rpitest-dut` | ja | ja |
+| I2C, SPI en seriële console uit | ja | ja |
+| wifi-land (standaard `BE`) | ja | ja |
+| automatisch inloggen, schermbeveiliging uit | ja | nee |
+| kioskbrowser bij het inloggen | ja | nee |
+| dienst `rpitest-ui` / `rpitest-agent` | ja | ja |
+| vast IP-adres (als laatste) | `.1` | `.2` |
+| alleen-lezen bestandssysteem | nee | met `--readonly` |
 
-1. Schrijf Raspberry Pi OS Lite (Trixie) naar een SD, met een gebruiker en internet voor de installatie.
-2. ```
-   git clone https://github.com/frederiekberthier/RPI_test.git
-   cd RPI_test
-   sudo ./image/install-dut.sh --readonly     # zonder --readonly blijft de SD beschrijfbaar
-   sudo reboot
-   ```
-   `--readonly` zet een overlay aan: een Pi die zonder afsluiten uitgezet wordt, kan de SD niet meer beschadigen.
-   Wijzigingen na de herstart gaan verloren. Schakel de overlay eerst uit (`raspi-config`, Performance Options) om bij te werken.
-3. **Kloon de SD** als hij klaar is, zodat je meerdere identieke kaarten hebt:
-   ```
-   sudo dd if=/dev/sdX of=dut-master.img bs=4M status=progress
-   ```
-   Schrijf `dut-master.img` met Imager of `dd` naar elke nieuwe SD.
+**Opties:** `--check` (alleen tonen), `--force` (alles opnieuw), `--readonly` (alleen `dut`), `--skip-preflight`.
+Omgevingsvariabelen: `KIOSK_USER`, `WIFI_COUNTRY`, `ETH_IFACE`.
+
+**Is de software al geïnstalleerd?** Het script bepaalt dat per onderdeel: pakketten via `dpkg-query`, de software via de
+`REVISION` die bij de installatie is vastgelegd, de dienst via `systemctl` en het IP-adres via NetworkManager. Draai je het script
+opnieuw, dan staat er `[aanwezig]` bij wat klaar is, en wordt dat overgeslagen. Haal je een nieuwe versie van de repo binnen
+(`git pull`), dan wordt alleen de software vervangen en de dienst herstart.
+
+**Alleen-lezen DUT-SD:** pas dit toe als alles werkt, met `sudo ./install.sh dut --readonly`. Een Pi die zonder afsluiten
+uitgezet wordt, kan de SD dan niet meer beschadigen, maar wijzigingen gaan na een herstart verloren. Schakel de overlay eerst
+uit (`raspi-config`, Performance Options) om bij te werken.
+
+**Kloon de DUT-SD** als hij klaar is, zodat je meerdere identieke kaarten hebt:
+```
+sudo dd if=/dev/sdX of=dut-master.img bs=4M status=progress
+```
+Schrijf `dut-master.img` met Imager of `dd` naar elke nieuwe SD.
 
 ## Wat waar staat
 

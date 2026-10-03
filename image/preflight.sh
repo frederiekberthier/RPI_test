@@ -4,7 +4,7 @@
 #   ./image/preflight.sh tester     # voor de testpi (Pi 5, met scherm)
 #   ./image/preflight.sh dut        # voor de tester-SD van de te testen Pi
 #
-# De installatiescripts roepen dit zelf eerst aan (overslaan kan met SKIP_PREFLIGHT=1).
+# install.sh roept dit zelf eerst aan (overslaan kan met --skip-preflight).
 # Eindigt met een foutcode als er iets is dat de installatie zou laten mislukken.
 set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
