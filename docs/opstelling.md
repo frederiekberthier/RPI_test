@@ -1,26 +1,22 @@
 # Opstelling: testpi + te testen Pi (breadboard)
 
-```
- testpi (Pi 5, scherm)                              DUT (Pi 4/5, tester-SD)
- ┌──────────────┐   GPIO2..27 via 220 Ω       ┌──────────────┐
- │  header      ├─────────────────────────────┤  header      │
- │  GND         ├─────────────────────────────┤  GND         │
- │  eth0        ├──── UTP-kabel, 192.168.77.x ┤  eth0        │
- └──────────────┘                             └──────────────┘
- eigen voeding                                  eigen voeding
-```
+![Overzicht van de opstelling: testpi en DUT, verbonden via GPIO, ethernet, wifi en bluetooth; USB-fixture en schermen](img/overzicht.svg)
+
+*De afbeeldingen worden gegenereerd door `docs/diagrams/maak_schemas.py`. Pas dat script aan, niet de SVG's.*
 
 ## Onderdelen
 
 | Aantal | Onderdeel | Opmerking |
 |---|---|---|
-| 2 | 40-pins GPIO-breakout voor breadboard ("cobbler") + lintkabel | één per Pi |
-| 2 | breadboard | één per breakout |
-| 26 | weerstand 220 Ω | één per GPIO-lijn |
-| 26 + 3 | male-male dupontdraad, ca. 20 cm | 26 signaal + 3 GND |
+| 2 | 40-pins GPIO-breakout voor breadboard ("cobbler") + lintkabel | één per Pi; controleer waar pin 1 zit |
+| 2 | breadboard | één per breakout; de breakouts hoeven alleen de pinnen te dragen |
+| 26 | weerstand 220 Ω | zie "Weerstandskabels" hieronder |
+| 29 | male-male dupontdraad, ca. 20 cm | 26 worden weerstandskabels, 3 blijven gewone GND-draden |
+| 26 | stukjes krimpkous | over de soldeerverbinding van de weerstandskabel |
 | 1 | UTP-kabel | direct tussen beide Pi's, geen switch |
 | 2 | voeding per Pi (5 V / 3 A voor Pi 4, 5 V / 5 A voor Pi 5) | elke Pi zijn eigen voeding |
 | 1 | multimeter | voor de controle voor de eerste keer opstarten |
+| 1 | soldeerbout | voor de 26 weerstandskabels |
 
 ## Veiligheidsregels
 
@@ -32,10 +28,22 @@
 
 ## Bedrading
 
-Verbind per GPIO de pin op breakout A (testpi) via een weerstand met dezelfde pin op breakout B (DUT).
-Een weerstand past niet tussen twee breadboards. Zet hem daarom op breadboard A: één poot in het gat van de pin, de andere poot in een vrij gat van een andere kolom. Van die kolom loopt een dupontdraad naar de overeenkomstige pin op breadboard B.
+![Breadboardschema: twee breakouts met per pin aangegeven welke kabel erin hoort](img/breadboard.svg)
 
-Gebruik voor GND één draad op elk van drie GND-pinnen (bv. 6, 14, 39), zonder weerstand.
+Verbind elke GPIO-pin op breakout A (testpi) met **dezelfde** pin op breakout B (DUT), en drie GND-pinnen.
+
+**Weerstandskabels.** Op een breadboard bezet de breakout alle kolommen waarin de pinnen zitten, dus
+er is geen vrije plek om een weerstand tussen twee pinnen te zetten. Daarom zit de weerstand in de kabel zelf:
+
+1. Knip een male-male dupontdraad doormidden.
+2. Solder een weerstand van 220 Ω tussen de twee helften en schuif er krimpkous over.
+3. Maak er 26 en nummer of label ze niet: ze zijn onderling identiek.
+4. Steek het ene uiteinde in een vrij gat in de rij van pin *n* op breakout A, het andere in de rij van pin *n* op breakout B.
+
+Voor GND gebruik je 3 gewone dupontdraden (pin 6, 14 en 39), zonder weerstand.
+
+De pinnen waar **geen** kabel naartoe gaat, staan in het schema aangegeven: 3V3 en 5V (rood, nooit), de ID-pinnen
+27 en 28 (grijs, niet gebruikt) en de overige GND-pinnen (vrij).
 
 | GPIO | Pin | | GPIO | Pin | | GPIO | Pin |
 |---|---|---|---|---|---|---|---|
@@ -51,7 +59,7 @@ Gebruik voor GND één draad op elk van drie GND-pinnen (bv. 6, 14, 39), zonder 
 
 GND-pinnen: 6, 9, 14, 20, 25, 30, 34, 39. De tabel staat ook in de code (`HEADER_PIN` in `rpitest/gpio/ports.py`), en een test controleert dat hij klopt. Het rapport noemt bij een probleem altijd GPIO-nummer én fysieke pin.
 
-Tip: gebruik voor elke lijn de kleur van de weerstandsband of een label, zodat je bij een fout snel de juiste draad vindt.
+Het rapport noemt een probleem altijd met GPIO-nummer en fysieke pin, zodat je de bijbehorende kabel snel vindt.
 
 ## Controle voor het opstarten (beide Pi's uit)
 

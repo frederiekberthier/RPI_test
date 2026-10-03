@@ -23,6 +23,8 @@ Systeemfouten: `eth_100`, `eth_errors`, `eth_slow`, `eth_loss`, `no_wifi`, `wifi
 `power_ram_error`, `power_core_missing`, `power_no_sensor`.
 
 ## Op echte hardware
+![Overzicht van de opstelling](docs/img/overzicht.svg)
+
 Zie [docs/opstelling.md](docs/opstelling.md): onderdelen, bedrading van het breadboard,
 netwerk, installatie (Raspberry Pi OS **Trixie**, libgpiod 2.x) en wat bij de eerste run nog
 bevestigd moet worden.
