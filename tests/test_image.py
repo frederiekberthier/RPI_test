@@ -190,9 +190,3 @@ def test_diagnose_runs_the_same_commands_the_tests_parse():
                     "ping -c 3 -i 0.2 -q -W 1", "lsblk", "ls -l /sys/block/", "dmesg", "--list-chips",
                     "/sys/class/thermal/thermal_zone0/temp", "journalctl -u rpitest-ui"):
         assert command in text, command
-
-
-def test_diagnose_never_prints_secrets():
-    text = (IMAGE / "diagnose.sh").read_text(encoding="utf-8")
-    assert "--show-secrets" not in text and "WIFI_PASSWORD" not in text and "password" not in text.lower().replace(
-        "geen wachtwoorden", "")

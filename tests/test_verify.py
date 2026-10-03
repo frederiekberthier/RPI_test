@@ -119,3 +119,22 @@ def test_verify_needs_root_and_a_valid_role(box):
     installed(box, "server")
     assert "sudo" in box.run_script("image/verify.sh", "server", FAKE_UID="1000").clean
     assert "gebruik:" in box.run_script("image/verify.sh", "tester").clean
+
+
+# ---------------------------------------------------------------- diagnose.sh: echte uitvoer, geen geheimen
+
+def test_diagnose_collects_output_but_never_asks_for_secrets(box):
+    # nmcli geeft alleen een wachtwoord als erom gevraagd wordt (--show-secrets of -s); de stub verraadt dat
+    box.add_stub("nmcli", 'echo "nmcli $*" >> "$STATE/calls"\n'
+                 'case "$*" in *show-secrets*|*" -s "*|*802-11-wireless-security*) echo "psk=GEHEIM-WACHTWOORD";; esac\n'
+                 'echo "wifi-lijst"')
+    box.add_stub("bluetoothctl", 'echo "bluetoothctl $*" >> "$STATE/calls"\necho "Controller AA:BB"')
+    out = box.root / "diagnose.txt"
+    result = box.run_script("image/diagnose.sh", out.as_posix())
+    assert result.returncode == 0, result.clean
+    text = out.read_text(encoding="utf-8", errors="replace")
+    assert "Klaar. Dit bestand staat in" in text and "wifi-lijst" in text and "Controller AA:BB" in text
+    assert "GEHEIM-WACHTWOORD" not in result.clean + text
+    asked = [c for c in box.calls() if c.startswith(("nmcli", "bluetoothctl"))]
+    assert asked and not [c for c in asked if "secret" in c or "password" in c.lower()]
+    assert [c for c in box.mutations() if c != "rfkill list"] == []  # de diagnose wijzigt niets (rfkill list leest alleen)
