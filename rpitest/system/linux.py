@@ -320,6 +320,8 @@ class LinuxOps(SystemOps):
             raise OpsError(f"geen toegestaan blokapparaat: {block!r}")
         if parsers.usb_path_from_syspath(os.path.realpath(self._root / "sys/block" / block)) is None:
             raise OpsError(f"{block} is geen USB-apparaat")
+        if storage.is_mounted(block, _read(self._root / "proc/mounts") or ""):
+            raise OpsError(f"{block} is gekoppeld (mounted); ontkoppel de stick eerst")
         return storage.run_storage_test(f"/dev/{block}", size_mb)
 
     def usb_uptime(self) -> float:

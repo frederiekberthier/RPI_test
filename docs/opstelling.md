@@ -151,7 +151,10 @@ groter dan 256 GiB en gekoppelde (mounted) apparaten.
 
 **Veiligheid:** de test schrijft alleen naar een apparaat waarvan sector 0 onze header bevat, en
 alleen in een testgebied vanaf 16 MB. Een stick van een student die toevallig in de TEST-CLIENT zit, heeft die
-header niet en wordt niet aangeraakt. Alleen `/dev/sdX`-apparaten die aan USB hangen worden geaccepteerd.
+header niet en wordt niet aangeraakt. Alleen `/dev/sdX`-apparaten die aan USB hangen worden geaccepteerd, het moet een
+echt blokapparaat zijn, het wordt **exclusief** geopend (een gekoppelde of anderszins geclaimde stick wordt door Linux geweigerd) en de
+header wordt gecontroleerd op dezelfde bestandsbeschrijver als waarop geschreven wordt. Wordt de stick tussen de controle en het
+openen vervangen, dan weigert de test.
 
 **Poorten benoemen:** de namen en drempels per slot staan in `USB_SLOTS` in `rpitest/config.py`.
 Een ander fixture-indeling kan met `python -m rpitest --usb-fixture slots.json`, met een lijst van dezelfde

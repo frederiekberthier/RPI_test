@@ -24,7 +24,7 @@ def make_stick(tmp_path, label="SLOT1", size_mb=64, name="stick.img"):
     with open(path, "wb") as f:
         f.truncate(size_mb * MB)
     if label:
-        storage.write_label(str(path), label)
+        storage.write_label(str(path), label, allow_file=True)
     return str(path)
 
 
@@ -41,7 +41,7 @@ def test_label_validation():
 def test_storage_test_passes_and_leaves_header_and_start_untouched(tmp_path):
     path = make_stick(tmp_path)
     before = open(path, "rb").read(16 * MB)
-    result = storage.run_storage_test(path, size_mb=4, direct=False)
+    result = storage.run_storage_test(path, size_mb=4, direct=False, allow_file=True)
     assert result["mismatching_chunks"] == 0 and result["mb"] == 4
     assert open(path, "rb").read(16 * MB) == before  # niets voor het testgebied aangeraakt
     assert storage.read_label(path) == "SLOT1"
@@ -53,14 +53,14 @@ def test_storage_test_refuses_device_without_header(tmp_path):
         f.write(b"studentdata" * 100)
     snapshot = open(path, "rb").read()
     with pytest.raises(OpsError, match="geen RPITEST-fixtureheader"):
-        storage.run_storage_test(path, size_mb=2, direct=False)
+        storage.run_storage_test(path, size_mb=2, direct=False, allow_file=True)
     assert open(path, "rb").read() == snapshot  # niet geschreven
 
 
 def test_storage_test_refuses_too_small_device(tmp_path):
     path = make_stick(tmp_path, size_mb=20)
     with pytest.raises(OpsError, match="te klein"):
-        storage.run_storage_test(path, size_mb=8, direct=False)
+        storage.run_storage_test(path, size_mb=8, direct=False, allow_file=True)
 
 
 def test_storage_test_detects_corruption(tmp_path, monkeypatch):
@@ -73,7 +73,7 @@ def test_storage_test_detects_corruption(tmp_path, monkeypatch):
         os.write(fd, b"\xff\x00\xff")
 
     monkeypatch.setattr(storage.os, "fsync", corrupting_fsync)
-    assert storage.run_storage_test(path, size_mb=4, direct=False)["mismatching_chunks"] == 1
+    assert storage.run_storage_test(path, size_mb=4, direct=False, allow_file=True)["mismatching_chunks"] == 1
 
 
 # ---------- sysfs en kernelberichten ----------
@@ -274,6 +274,81 @@ def test_reported_speeds_do_not_include_hashing_time(tmp_path, monkeypatch):
         return real_sha256(data)
 
     monkeypatch.setattr(storage.hashlib, "sha256", slow_sha256)
-    result = storage.run_storage_test(make_stick(tmp_path), size_mb=4, direct=False)
+    result = storage.run_storage_test(make_stick(tmp_path), size_mb=4, direct=False, allow_file=True)
     assert result["read_mb_s"] > 30 and result["write_mb_s"] > 30, result
     assert result["mismatching_chunks"] == 0
+
+
+# ---------------------------------------------------------------- issue #9: veilig schrijven op een blokapparaat
+
+def fake_block(monkeypatch, rdev=0):
+    """Laat storage een gewoon bestand als blokapparaat beschouwen (en leg vast hoe het geopend wordt)."""
+    monkeypatch.setattr(storage, "_kind", lambda path: ("block", rdev))
+
+
+def test_a_regular_file_is_refused_by_default(tmp_path):
+    path = make_stick(tmp_path)
+    before = open(path, "rb").read(16 * MB + 100)
+    with pytest.raises(OpsError, match="geen blokapparaat"):
+        storage.run_storage_test(path, size_mb=2, direct=False)
+    with pytest.raises(OpsError, match="geen blokapparaat"):
+        storage.write_label(path, "SLOT2")
+    assert open(path, "rb").read(16 * MB + 100) == before
+
+
+def test_block_devices_are_opened_exclusively(tmp_path, monkeypatch):
+    import errno
+    fake_block(monkeypatch)
+    seen = {}
+
+    def refuse(path, flags, *a):
+        seen["flags"] = flags
+        raise OSError(errno.EBUSY, "Device or resource busy")
+
+    monkeypatch.setattr(storage.os, "open", refuse)
+    with pytest.raises(OpsError, match="in gebruik"):
+        storage.run_storage_test(make_stick(tmp_path), size_mb=2, direct=False)
+    assert seen["flags"] & os.O_EXCL  # Linux weigert dan een gemount of anderszins geclaimd apparaat
+    seen.clear()
+    with pytest.raises(OpsError, match="in gebruik"):
+        storage.write_label("/dev/sdx", "SLOT1")
+    assert seen["flags"] & os.O_EXCL
+
+
+def test_the_header_is_read_from_the_same_descriptor_that_is_written(tmp_path, monkeypatch):
+    path = make_stick(tmp_path)
+    monkeypatch.setattr(storage, "read_label", lambda p: pytest.fail("aparte open voor de header-controle"))
+    assert storage.run_storage_test(path, size_mb=2, direct=False, allow_file=True)["mismatching_chunks"] == 0
+
+
+def test_a_device_that_was_swapped_between_check_and_open_is_refused(tmp_path, monkeypatch):
+    import stat
+    from types import SimpleNamespace
+
+    path = make_stick(tmp_path)
+    fake_block(monkeypatch, rdev=111)  # bij de eerste controle was dit apparaat 111
+    monkeypatch.setattr(storage.os, "fstat", lambda fd: SimpleNamespace(st_mode=stat.S_IFBLK, st_rdev=222))
+    monkeypatch.setattr(storage, "_flags", lambda direct, exclusive: os.O_RDWR | getattr(os, "O_BINARY", 0))
+    with pytest.raises(OpsError, match="vervangen"):
+        storage.run_storage_test(path, size_mb=2, direct=False)
+
+
+def test_a_device_without_header_is_refused_without_writing(tmp_path):
+    path = make_stick(tmp_path, label=None)
+    snapshot = open(path, "rb").read()
+    with pytest.raises(OpsError, match="geen RPITEST-fixtureheader"):
+        storage.run_storage_test(path, size_mb=2, direct=False, allow_file=True)
+    assert open(path, "rb").read() == snapshot
+
+
+def test_a_mounted_stick_is_refused(tmp_path, monkeypatch):
+    (tmp_path / "proc").mkdir()
+    (tmp_path / "proc/mounts").write_text("/dev/sda1 /media/student vfat rw 0 0\n/dev/sdb /mnt ext4 rw 0 0\n")
+    monkeypatch.setattr("rpitest.system.linux.os.path.realpath",
+                        lambda p: "/sys/devices/platform/usb2/2-1/2-1.1/2-1.1:1.0/host0/target0:0:0/0:0:0:0/block/sda")
+    ops = LinuxOps(root=tmp_path)
+    with pytest.raises(OpsError, match="gekoppeld"):
+        ops.usb_storage_test("sda", 4)
+    assert storage.is_mounted("sda", "/dev/sda1 /x vfat rw 0 0\n")
+    assert storage.is_mounted("sda", "/dev/sda /x ext4 rw 0 0\n")
+    assert not storage.is_mounted("sda", "/dev/sdaa1 /x vfat rw 0 0\n/dev/sdb1 /y vfat rw 0 0\n")
