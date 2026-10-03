@@ -55,7 +55,8 @@ stappenplan staat ook in de [README](../README.md#installeren-op-een-pi-stappenp
 | hostnaam `test-server` / `test-client` | ja | ja |
 | I2C, SPI en seriële console uit | ja | ja |
 | wifi-land (standaard `BE`) | ja | ja |
-| automatisch inloggen, schermbeveiliging uit | ja | nee |
+| automatisch inloggen op het bureaublad | ja | nee |
+| schermbeveiliging uit (apart onderdeel, wordt bij een mislukking opnieuw geprobeerd) | ja | nee |
 | kioskbrowser bij het inloggen | ja | nee |
 | dienst `rpitest-ui` / `rpitest-agent` | ja | ja |
 | vast IP-adres (als laatste) | `.1` | `.2` |
@@ -124,6 +125,7 @@ Controleer bij de eerste keer:
    `do_wifi_country`, `enable_overlayfs` en `enable_bootro`. Het script meldt een waarschuwing als er een mislukt.
 3. De autostart van labwc (`~/.config/labwc/autostart`). Ik ga ervan uit dat die de standaard autostart vervangt
    (geen taakbalk). Verschijnt de taakbalk toch, of start de browser niet, dan zit het probleem hier.
-4. Schermbeveiliging: als het scherm na enkele minuten zwart wordt, moet dat apart worden uitgezet.
+4. Schermbeveiliging: `install.sh` zet die uit via `raspi-config nonint do_blanking 1` en controleert dat met `get_blanking` (0 = aan,
+   1 = uit; de betekenis is nog niet op Trixie bevestigd). Wordt het scherm toch na enkele minuten zwart, meld dat dan.
 5. De kiosk-opties van Chromium (`--ozone-platform-hint=auto` en de rest) op de Chromium-versie van Trixie.
 6. Of de installatie als root over SSH via wifi niet vastloopt wanneer het vaste IP-adres aan het eind wordt gezet.

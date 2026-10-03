@@ -61,7 +61,7 @@ if [ "$ROLE" = server ]; then
   PACKAGES+=(chromium)
   UNIT=rpitest-ui.service
   MY_IP="$(config_value SERVER_IP)"
-  COMPONENTS=(packages app hostname pins wificountry login kiosk unit network)
+  COMPONENTS=(packages app hostname pins wificountry login blanking kiosk unit network)
   if [ -z "$KIOSK_HOME" ] && [ -n "$KIOSK_USER" ] && id "$KIOSK_USER" >/dev/null 2>&1; then
     KIOSK_HOME="$(getent passwd "$KIOSK_USER" | cut -d: -f6)"
   fi
@@ -80,7 +80,8 @@ describe() {
     hostname)    echo "Hostnaam test-$ROLE" ;;
     pins)        echo "GPIO-pinnen vrij (I2C, SPI en seriële poort uit)" ;;
     wificountry) echo "Wifi-land $WIFI_COUNTRY" ;;
-    login)       echo "Automatisch inloggen en schermbeveiliging uit" ;;
+    login)       echo "Automatisch inloggen op het bureaublad" ;;
+    blanking)    echo "Schermbeveiliging uit (het scherm blijft aan)" ;;
     kiosk)       echo "Kioskbrowser bij het inloggen" ;;
     unit)        echo "Dienst $UNIT" ;;
     network)     echo "Vast IP-adres $MY_IP/24 op $ETH_IFACE" ;;
@@ -214,10 +215,21 @@ check_login() {
 }
 
 apply_login() {
-  local ok=0
-  raspi-config nonint do_boot_behaviour B4 || { warn "automatisch inloggen instellen mislukte"; ok=1; }
-  raspi-config nonint do_blanking 1 || { warn "schermbeveiliging uitzetten mislukte"; ok=1; }
-  return "$ok"
+  raspi-config nonint do_boot_behaviour B4 || { warn "automatisch inloggen instellen mislukte"; return 1; }
+}
+
+# Apart onderdeel (en niet bij 'login'): slaagt het ene en faalt het andere, dan moet alleen het mislukte
+# bij de volgende run opnieuw. get_blanking geeft 0 (schermbeveiliging aan) of 1 (uit), zoals get_i2c.
+check_blanking() {
+  case "$(raspi_state get_blanking)" in
+    1) ;;
+    0) DETAIL="schermbeveiliging staat aan: het scherm wordt na enkele minuten zwart"; return 1 ;;
+    *) DETAIL="raspi-config geeft geen antwoord"; return 2 ;;
+  esac
+}
+
+apply_blanking() {
+  raspi-config nonint do_blanking 1 || { warn "schermbeveiliging uitzetten mislukte"; return 1; }
 }
 
 check_kiosk() {

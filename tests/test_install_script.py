@@ -64,8 +64,9 @@ exit 0
     "raspi-config": '''
 echo "raspi-config $*" >> "$STATE/calls"
 cmd="${2:-}"; arg="${3:-}"
+[ "${FAIL_RASPI:-}" = "$cmd" ] && exit 1
 case "$cmd" in
-  get_i2c|get_spi|get_serial_hw|get_serial_cons|get_autologin)
+  get_i2c|get_spi|get_serial_hw|get_serial_cons|get_autologin|get_blanking)
     [ "${RASPI_UNKNOWN:-0}" = 1 ] && exit 0
     default=0; [ "$cmd" = get_autologin ] && default=1
     cat "$STATE/raspi_$cmd" 2>/dev/null || echo "$default" ;;
@@ -74,6 +75,7 @@ case "$cmd" in
   do_serial_hw) echo "$arg" > "$STATE/raspi_get_serial_hw" ;;
   do_serial_cons) echo "$arg" > "$STATE/raspi_get_serial_cons" ;;
   do_boot_behaviour) echo 0 > "$STATE/raspi_get_autologin" ;;
+  do_blanking) echo "$arg" > "$STATE/raspi_get_blanking" ;;
   do_wifi_country) echo "$arg" > "$STATE/country" ;;
 esac
 exit 0
@@ -212,7 +214,7 @@ def test_check_mode_on_an_empty_pi_reports_missing_and_changes_nothing(box):
     assert result.returncode == 3, result.clean
     assert "ontbreekt" in result.clean and "ontbreken: python3-venv" in result.clean
     # alles ontbreekt echt: er is niets "onbekend" (regressie: cmp gaf 2 terug bij een ontbrekend bestand)
-    assert "[onbekend" not in result.clean and result.clean.count("[ontbreekt") == 9
+    assert "[onbekend" not in result.clean and result.clean.count("[ontbreekt") == 10
     assert "Voer uit: sudo ./install.sh server" in result.clean
     assert box.mutations() == []
     assert not (box.root / "app" / "REVISION").exists() and not list((box.root / "systemd").iterdir())
@@ -222,7 +224,7 @@ def test_check_mode_after_installing_says_everything_is_there(box):
     installed_state(box)
     result = box.run("server", "--check")
     assert result.returncode == 0, result.clean
-    assert result.clean.count("[aanwezig") == 9 and "ontbreekt " not in result.clean.replace("ontbreken", "")
+    assert result.clean.count("[aanwezig") == 10 and "ontbreekt " not in result.clean.replace("ontbreken", "")
 
 
 # ---------------------------------------------------------------- eerste installatie
@@ -264,7 +266,7 @@ def test_second_run_recognises_everything_and_does_nothing(box):
     result = box.run("server", "--skip-preflight")
     assert result.returncode == 0, result.clean
     assert len(box.mutations()) == before, box.mutations()[before:]  # niets opnieuw gedaan
-    assert "Gedaan: 0 | al aanwezig: 9 | mislukt: 0" in result.clean
+    assert "Gedaan: 0 | al aanwezig: 10 | mislukt: 0" in result.clean
     assert "niets te doen" in result.clean and "sudo reboot" not in result.clean  # geen onnodige herstart-tip
 
 
@@ -291,7 +293,7 @@ def test_a_new_revision_replaces_only_the_software_and_restarts_the_service(box)
     assert "systemctl try-restart rpitest-ui.service" in new
     assert not [c for c in new if c.startswith(("apt-get", "hostnamectl", "nmcli connection"))]
     assert (box.root / "app" / "REVISION").read_text().strip() == "nieuwe-revisie-0001"
-    assert "Gedaan: 1 | al aanwezig: 8" in result.clean
+    assert "Gedaan: 1 | al aanwezig: 9" in result.clean
 
 
 def test_a_deleted_unit_file_counts_as_missing_not_unknown(box):
@@ -439,3 +441,24 @@ def test_a_half_created_venv_is_rebuilt_instead_of_skipped(box):
     assert result.returncode == 0, result.clean
     assert any(c.startswith("python3 -m venv --clear --system-site-packages") for c in box.calls())
     assert (bin_dir / "pip").exists()
+
+
+# ---------------------------------------------------------------- issue #24: schermbeveiliging apart en herhaalbaar
+
+def test_a_failed_blanking_step_is_retried_on_the_next_run(box):
+    first = box.run("server", "--skip-preflight", FAIL_RASPI="do_blanking")
+    assert first.returncode == 1 and "niet gelukt: blanking" in first.clean
+    second = box.run("server", "--skip-preflight")
+    assert second.returncode == 0, second.clean
+    assert sum(c == "raspi-config nonint do_blanking 1" for c in box.calls()) == 2  # niet als 'aanwezig' overgeslagen
+    assert box.run("server", "--check").returncode == 0
+
+
+def test_autologin_and_blanking_are_reported_separately(box):
+    result = box.run("server", "--check")
+    assert "Automatisch inloggen op het bureaublad" in result.clean and "Schermbeveiliging uit" in result.clean
+
+
+def test_the_client_needs_neither_autologin_nor_blanking(box):
+    result = box.run("client", "--check")
+    assert "Schermbeveiliging" not in result.clean and "Automatisch inloggen" not in result.clean
