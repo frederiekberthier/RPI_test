@@ -95,6 +95,18 @@ const OVERALL = {
 };
 const GROUP_STATUS = {wachten: "wacht", bezig: "bezig…", klaar: "klaar", overgeslagen: "overgeslagen", fout: "fout", waarschuwing: "waarschuwing"};
 let state = null, pending = false;
+let notice = null;   // melding van de server of een mislukte opdracht; blijft even staan boven de vaste hinttekst
+const NOTICE_MS = 4000;
+
+function showNotice(text) {
+  notice = {text, until: Date.now() + NOTICE_MS};
+  $("hint").textContent = text;
+}
+
+function setHint(fallback) {
+  if (notice && Date.now() < notice.until) $("hint").textContent = notice.text;
+  else { notice = null; $("hint").textContent = fallback; }
+}
 
 function el(tag, cls, text) {
   const e = document.createElement(tag);
@@ -109,10 +121,10 @@ async function post(path, body) {
   try {
     const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body || {})});
     const data = await r.json();
-    if (!data.ok) $("hint").textContent = data.message;
+    if (!data.ok) showNotice(data.message);
     await refresh();
   } catch (e) {
-    $("hint").textContent = "Kon de opdracht niet versturen.";
+    showNotice("Kon de opdracht niet versturen.");
   } finally { pending = false; }
 }
 
@@ -143,7 +155,7 @@ function renderButtons(s) {
     p.disabled = !s.client.ready;
     p.textContent = s.client.ready ? "START TEST" : "Wachten op TEST-CLIENT…";
     p.classList.toggle("go", s.client.ready);
-    $("hint").textContent = s.client.ready ? "" : "De knop wordt actief zodra de TEST-CLIENT opgestart en verbonden is.";
+    setHint(s.client.ready ? "" : "De knop wordt actief zodra de TEST-CLIENT opgestart en verbonden is.");
   } else if (s.phase === "running") {
     p.disabled = true;
     p.textContent = "Test bezig… " + Math.floor(s.elapsed) + " s";
@@ -151,12 +163,12 @@ function renderButtons(s) {
     sec.disabled = s.abort_requested;
     sec.textContent = s.abort_requested ? "Stopt na het huidige onderdeel…" : "Afbreken";
     sec.onclick = () => post("/api/abort");
-    $("hint").textContent = "";
+    setHint("");
   } else {
     p.disabled = false;
     p.textContent = "NIEUWE TEST";
     if (s.last && s.last.html) { link.href = "/reports/" + encodeURIComponent(s.last.html); link.classList.remove("hidden"); }
-    $("hint").textContent = "Wissel de Pi, of druk op de knop om opnieuw te beginnen.";
+    setHint("Wissel de Pi, of druk op de knop om opnieuw te beginnen.");
   }
 }
 
