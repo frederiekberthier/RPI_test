@@ -10,7 +10,7 @@ from rpitest import factory
 from rpitest import report as report_mod
 from rpitest.agent.client import RemoteGpioPort, RpcClient
 from rpitest.context import Context
-from rpitest.gpio.mock import MockWiring
+from rpitest.gpio.mock import SERVER, MockWiring
 from rpitest.models import CheckResult, Report, Status
 from rpitest.ui import server as ui_server
 from rpitest.ui.controller import Controller
@@ -31,7 +31,7 @@ def wait_until(predicate, timeout=30.0):
 
 def make_controller(tmp_path, groups=None, make_context=None, probe=factory.mock_probe):
     c = Controller(make_context or mock_factory(), probe, tmp_path, groups)
-    c.refresh_dut()
+    c.refresh_client()
     return c
 
 
@@ -54,19 +54,19 @@ def test_full_mock_run_ends_with_report_and_all_groups_done(tmp_path):
     assert s["history"][0]["serial"] == "MOCK0001" and s["history"][0]["overall"] == "PASS"
 
 
-def test_start_is_refused_until_the_dut_is_ready(tmp_path):
+def test_start_is_refused_until_the_client_is_ready(tmp_path):
     ready = {"value": None}
     c = make_controller(tmp_path, probe=lambda: ready["value"])
-    assert c.start() == (False, "de DUT is nog niet bereikbaar")
+    assert c.start() == (False, "de TEST-CLIENT is nog niet bereikbaar")
     ready["value"] = {"model": "Pi", "serial": "X1"}
-    c.refresh_dut()
-    assert c.state()["dut"] == {"ready": True, "info": {"model": "Pi", "serial": "X1"}}
+    c.refresh_client()
+    assert c.state()["client"] == {"ready": True, "info": {"model": "Pi", "serial": "X1"}}
     ready["value"] = None  # kabel eruit
-    c.refresh_dut()
-    assert c.state()["dut"]["ready"] is False
+    c.refresh_client()
+    assert c.state()["client"]["ready"] is False
 
 
-def test_second_start_while_running_and_dut_probe_paused_during_run(tmp_path):
+def test_second_start_while_running_and_client_probe_paused_during_run(tmp_path):
     gate, started = threading.Event(), threading.Event()
 
     def slow(ctx):
@@ -81,8 +81,8 @@ def test_second_start_while_running_and_dut_probe_paused_during_run(tmp_path):
     assert c.start() == (False, "er loopt al een test")
     assert c.reset() == (False, "er loopt nog een test")
     before = len(probes)
-    c.refresh_dut()
-    assert len(probes) == before  # tijdens de run wordt de DUT niet gecontroleerd
+    c.refresh_client()
+    assert len(probes) == before  # tijdens de run wordt de TEST-CLIENT niet gecontroleerd
     assert c.state()["phase"] == "running" and c.state()["current"] == "slow"
     gate.set()
     c.join(30)
@@ -151,11 +151,11 @@ def test_closer_runs_after_every_run_even_when_a_check_crashes(tmp_path):
     assert s["results"][-1]["status"] == "FAIL" and "gecrasht" in s["results"][-1]["summary"]
 
 
-def test_unreachable_dut_marks_every_group_skipped(tmp_path):
+def test_unreachable_client_marks_every_group_skipped(tmp_path):
     def unreachable():
         client = RpcClient("http://127.0.0.1:9", timeout=0.3)
         wiring = MockWiring()
-        return Context(wiring.port("T"), RemoteGpioPort(client), client, {}), (lambda: None)
+        return Context(wiring.port(SERVER), RemoteGpioPort(client), client, {}), (lambda: None)
 
     c = make_controller(tmp_path, make_context=unreachable)
     s = run_to_end(c)
@@ -202,7 +202,7 @@ def test_page_and_state_are_served(web):
     assert status == 200 and b"Raspberry Pi tester" in body
     status, body = request("GET", "/api/state")
     state = json.loads(body)
-    assert status == 200 and state["phase"] == "idle" and state["dut"]["ready"] and state["shutdown_allowed"]
+    assert status == 200 and state["phase"] == "idle" and state["client"]["ready"] and state["shutdown_allowed"]
 
 
 def test_start_over_http_then_report_is_downloadable(web):
@@ -299,7 +299,7 @@ def test_page_never_uses_innerhtml():
     assert "innerHTML" not in page and "outerHTML" not in page and "document.write" not in page
 
 
-def test_report_escapes_hostile_text_from_the_dut():
+def test_report_escapes_hostile_text_from_the_client():
     hostile = '<script>alert(1)</script>'
     report = Report({"model": "T"}, {"model": hostile, "serial": hostile},
                     [CheckResult("usb.SLOT1", Status.FAIL, hostile, {"product": hostile})], "2026-10-03T10:00:00",

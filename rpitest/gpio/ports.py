@@ -16,7 +16,7 @@ HEADER_PIN: dict[int, int] = {
     14: 8, 15: 10, 16: 36, 17: 11, 18: 12, 19: 35, 20: 38, 21: 40, 22: 15, 23: 16,
     24: 18, 25: 22, 26: 37, 27: 13,
 }
-# Deze headerpinnen mogen NOOIT tussen testpi en DUT verbonden worden (voeding).
+# Deze headerpinnen mogen NOOIT tussen TEST-SERVER en TEST-CLIENT verbonden worden (voeding).
 POWER_HEADER_PINS: frozenset[int] = frozenset({1, 2, 4, 17})
 GND_HEADER_PINS: tuple[int, ...] = (6, 9, 14, 20, 25, 30, 34, 39)
 
@@ -33,7 +33,7 @@ class Pull:
 
 
 class GpioPort(ABC):
-    """GPIO-kant van een Pi. Zowel de testpi als de DUT (via de agent) implementeren dit."""
+    """GPIO-kant van een Pi. Zowel de TEST-SERVER als de TEST-CLIENT (via de agent) implementeren dit."""
 
     @abstractmethod
     def set_input(self, pins: Iterable[int], pull: str) -> None:

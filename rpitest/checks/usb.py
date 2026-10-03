@@ -1,4 +1,4 @@
-"""USB-poorten van de DUT, getest met vier voorbereide sticks in een vaste fixture.
+"""USB-poorten van de TEST-CLIENT, getest met vier voorbereide sticks in een vaste fixture.
 
 Per slot: stick gevonden, snelheid onderhandeld (USB3 niet teruggevallen naar USB2), data
 schrijven en terugleggen zonder fouten, leessnelheid. Daarna het kernellogboek: overstroom,
@@ -20,8 +20,8 @@ FAIL_DURING_TEST = FAIL_ALWAYS | {"disconnect"}
 def run(ctx: Context) -> list[CheckResult]:
     slots = ctx.usb_slots or list(config.USB_SLOTS)
     try:
-        devices = ctx.dut.call("usb_scan", _timeout=30)
-        t0 = ctx.dut.call("usb_uptime")
+        devices = ctx.client.call("usb_scan", _timeout=30)
+        t0 = ctx.client.call("usb_uptime")
     except _TOOL_ERRORS as exc:
         return [CheckResult("usb.scan", Status.FAIL, f"USB-apparaten niet op te halen: {exc}")]
 
@@ -31,7 +31,7 @@ def run(ctx: Context) -> list[CheckResult]:
         return [CheckResult(
             "usb.fixture", Status.FAIL,
             "geen enkele teststick gevonden: is de fixture aangesloten en zijn de sticks voorbereid? "
-            "(of is de USB-controller van de DUT defect)", {"devices_seen": others})]
+            "(of is de USB-controller van de TEST-CLIENT defect)", {"devices_seen": others})]
 
     results = [check_slot(ctx, slot, by_label.get(slot["label"])) for slot in slots]
     results.append(check_kernel(ctx, t0))
@@ -57,7 +57,7 @@ def check_slot(ctx: Context, slot: dict, device: dict | None) -> CheckResult:
         problems.append("stick is gevonden maar levert geen opslagapparaat")
     else:
         try:
-            storage = ctx.dut.call("usb_storage_test", block=device["block"], size_mb=config.USB_TEST_MB,
+            storage = ctx.client.call("usb_storage_test", block=device["block"], size_mb=config.USB_TEST_MB,
                                    _timeout=120)
             details["storage"] = storage
             if storage["mismatching_chunks"]:
@@ -81,7 +81,7 @@ def check_slot(ctx: Context, slot: dict, device: dict | None) -> CheckResult:
 
 def check_kernel(ctx: Context, test_start: float) -> CheckResult:
     try:
-        events = ctx.dut.call("usb_kernel_events", _timeout=30)
+        events = ctx.client.call("usb_kernel_events", _timeout=30)
     except _TOOL_ERRORS as exc:
         return CheckResult("usb.kernel", Status.WARN, f"kernellogboek niet te lezen: {exc}")
     boot = [e for e in events if e["ts"] < test_start]

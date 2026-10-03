@@ -5,7 +5,7 @@ from rpitest.agent.core import Agent
 from rpitest.agent.server import make_server, serve_in_thread
 from rpitest.context import Context
 from rpitest.gpio.mock import MockWiring
-from rpitest.gpio.mock import DUT as GPIO_DUT, TESTER as GPIO_TESTER
+from rpitest.gpio.mock import CLIENT as GPIO_CLIENT, SERVER as GPIO_SERVER
 from rpitest.models import Status
 from rpitest.runner import run_all
 from rpitest.system import mock as sysmock
@@ -21,8 +21,8 @@ def no_sleep(monkeypatch):
 def make_ctx(*faults):
     env = sysmock.MockEnv(faults)
     wiring = MockWiring()
-    client = LocalClient(Agent(wiring.port(GPIO_DUT), lambda: INFO, env.ops(sysmock.DUT)))
-    ctx = Context(wiring.port(GPIO_TESTER), RemoteGpioPort(client), client, {}, env.ops(sysmock.TESTER))
+    client = LocalClient(Agent(wiring.port(GPIO_CLIENT), lambda: INFO, env.ops(sysmock.CLIENT)))
+    ctx = Context(wiring.port(GPIO_SERVER), RemoteGpioPort(client), client, {}, env.ops(sysmock.SERVER))
     return ctx, env
 
 
@@ -34,7 +34,7 @@ def test_healthy_system_passes_everything():
     ctx, env = make_ctx()
     report = run_all(ctx)
     assert report.overall == "PASS", [(r.name, r.summary) for r in report.results if r.status is not Status.PASS]
-    assert not env.hotspot and not env.dut_connected  # alles netjes opgeruimd
+    assert not env.hotspot and not env.client_connected  # alles netjes opgeruimd
     assert not any(env.discoverable.values())
 
 
@@ -85,8 +85,8 @@ def test_weak_signal_warns():
     assert s["wifi.2.4GHz"] is Status.WARN
 
 
-def test_tester_without_wifi_skips_instead_of_blaming_the_dut():
-    ctx, _ = make_ctx("tester_no_wifi")
+def test_server_without_wifi_skips_instead_of_blaming_the_client():
+    ctx, _ = make_ctx("server_no_wifi")
     s = statuses(ctx)
     assert s["wifi"] is Status.SKIP and "wifi.radio" not in s
 
@@ -98,16 +98,16 @@ def test_missing_bluetooth_fails_controller():
 
 
 def test_receive_and_transmit_are_independent():
-    ctx, _ = make_ctx("bt_dut_rx_dead")
+    ctx, _ = make_ctx("bt_client_rx_dead")
     s = statuses(ctx)
     assert s["bt.receive"] is Status.FAIL and s["bt.transmit"] is Status.PASS
-    ctx, _ = make_ctx("bt_dut_tx_dead")
+    ctx, _ = make_ctx("bt_client_tx_dead")
     s = statuses(ctx)
     assert s["bt.receive"] is Status.PASS and s["bt.transmit"] is Status.FAIL
 
 
-def test_tester_without_bluetooth_skips():
-    ctx, _ = make_ctx("tester_no_bt")
+def test_server_without_bluetooth_skips():
+    ctx, _ = make_ctx("server_no_bt")
     assert statuses(ctx)["bluetooth"] is Status.SKIP
 
 
@@ -127,12 +127,12 @@ def test_agent_validates_parameters():
         ("bt_discoverable", {"enabled": "yes"}),
     ]:
         with pytest.raises(Exception, match="Error"):
-            ctx.dut.call(method, **params)
+            ctx.client.call(method, **params)
 
 
 def test_agent_without_system_backend_says_so():
     wiring = MockWiring()
-    client = LocalClient(Agent(wiring.port(GPIO_DUT), lambda: INFO))
+    client = LocalClient(Agent(wiring.port(GPIO_CLIENT), lambda: INFO))
     with pytest.raises(Exception, match="geen systeem-backend"):
         client.call("net_iface_info")
 
@@ -140,11 +140,11 @@ def test_agent_without_system_backend_says_so():
 def test_full_run_over_http_with_slow_call_timeouts():
     env = sysmock.MockEnv()
     wiring = MockWiring()
-    server = make_server(Agent(wiring.port(GPIO_DUT), lambda: INFO, env.ops(sysmock.DUT)), "127.0.0.1", 0)
+    server = make_server(Agent(wiring.port(GPIO_CLIENT), lambda: INFO, env.ops(sysmock.CLIENT)), "127.0.0.1", 0)
     serve_in_thread(server)
     try:
         client = RpcClient(f"http://127.0.0.1:{server.server_address[1]}")
-        ctx = Context(wiring.port(GPIO_TESTER), RemoteGpioPort(client), client, {}, env.ops(sysmock.TESTER))
+        ctx = Context(wiring.port(GPIO_SERVER), RemoteGpioPort(client), client, {}, env.ops(sysmock.SERVER))
         assert run_all(ctx).overall == "PASS"
     finally:
         server.shutdown()

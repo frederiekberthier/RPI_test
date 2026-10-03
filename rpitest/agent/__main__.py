@@ -1,4 +1,4 @@
-"""Start de agent op de DUT:  python -m rpitest.agent"""
+"""Start de agent op de TEST-CLIENT:  python -m rpitest.agent"""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from .server import make_server
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="rpitest.agent", description="Agent op de te testen Pi")
-    parser.add_argument("--host", default=config.DUT_IP, help="IP-adres om op te luisteren (enkel de testkabel!)")
+    parser = argparse.ArgumentParser(prog="rpitest.agent", description="Agent op de TEST-CLIENT")
+    parser.add_argument("--host", default=config.CLIENT_IP, help="IP-adres om op te luisteren (enkel de testkabel!)")
     parser.add_argument("--port", type=int, default=config.AGENT_PORT)
     parser.add_argument("--gpio-chip", help="pad van de gpiochip, bv. /dev/gpiochip0 (standaard: automatisch)")
     parser.add_argument("--list-chips", action="store_true", help="toon de gevonden gpiochips en stop")

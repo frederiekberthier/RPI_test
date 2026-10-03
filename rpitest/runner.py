@@ -41,13 +41,13 @@ def run_all(ctx: Context, groups: dict[str, Check] | None = None, progress: Prog
     progress = progress or Progress()
     started = _now()
     progress.group_started("connect")
-    connect, dut_info = system.check_connect(ctx)
+    connect, client_info = system.check_connect(ctx)
     results = [connect]
     progress.result(connect)
 
     for name, check in groups.items():
         if connect.status is Status.FAIL:
-            new = [CheckResult(name, Status.SKIP, "overgeslagen: geen verbinding met de DUT")]
+            new = [CheckResult(name, Status.SKIP, "overgeslagen: geen verbinding met de TEST-CLIENT")]
         elif progress.should_stop():
             new = [CheckResult(name, Status.SKIP, "overgeslagen: afgebroken door de operator")]
         else:
@@ -59,4 +59,4 @@ def run_all(ctx: Context, groups: dict[str, Check] | None = None, progress: Prog
         for result in new:
             results.append(result)
             progress.result(result)
-    return Report(ctx.tester_info, dut_info, results, started, _now())
+    return Report(ctx.server_info, client_info, results, started, _now())

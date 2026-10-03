@@ -31,11 +31,11 @@ def to_html(report: Report) -> str:
         )
     counts = Counter(r.status.value for r in report.results)
     summary = " &middot; ".join(f"{counts[s]} {s}" for s in ("PASS", "WARN", "FAIL", "SKIP") if counts[s])
-    dut, tester = report.dut_info, report.tester_info
-    model = esc(str(dut.get("model", "?")))
-    serial = esc(str(dut.get("serial", "?")))
-    revision = esc(str(dut.get("revision", "?")))
-    ram = esc(str(dut.get("ram_mb", "?")))
+    client, server = report.client_info, report.server_info
+    model = esc(str(client.get("model", "?")))
+    serial = esc(str(client.get("serial", "?")))
+    revision = esc(str(client.get("revision", "?")))
+    ram = esc(str(client.get("ram_mb", "?")))
     overall = report.overall
     return f"""<!doctype html>
 <html lang="nl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -52,13 +52,13 @@ pre{{white-space:pre-wrap;word-break:break-word;font-size:.8rem}}
 .back{{display:none}}@media screen{{.back.on{{display:inline-block;margin-bottom:.5rem}}}}
 @media print{{.back{{display:none!important}}details>summary{{display:none}}details pre{{display:none}}}}
 </style></head><body>
-<a class="back" id="back" href="/">&larr; terug naar de tester</a>
+<a class="back" id="back" href="/">&larr; terug naar de TEST-SERVER</a>
 <script>if(location.protocol.startsWith("http"))document.getElementById("back").classList.add("on")</script>
 <div class="banner"><h1>{overall}</h1><div>{_OVERALL_TEXT[overall]}</div><div>{summary}</div></div>
 <dl>
 <dt>Model</dt><dd>{model}</dd><dt>Serienummer</dt><dd>{serial}</dd>
 <dt>Revisie</dt><dd>{revision}</dd><dt>RAM</dt><dd>{ram} MB</dd>
-<dt>Getest met</dt><dd>{esc(str(tester.get("model", "?")))}</dd>
+<dt>Getest met</dt><dd>{esc(str(server.get("model", "?")))}</dd>
 <dt>Gestart</dt><dd>{esc(report.started)}</dd><dt>Klaar</dt><dd>{esc(report.finished)}</dd>
 </dl>
 <table><tr><th>Test</th><th>Resultaat</th><th>Toelichting</th></tr>
@@ -67,7 +67,7 @@ pre{{white-space:pre-wrap;word-break:break-word;font-size:.8rem}}
 
 def save(report: Report, out_dir: Path) -> tuple[Path, Path]:
     out_dir.mkdir(parents=True, exist_ok=True)
-    serial = re.sub(r"[^A-Za-z0-9._-]", "_", str(report.dut_info.get("serial", "onbekend")))
+    serial = re.sub(r"[^A-Za-z0-9._-]", "_", str(report.client_info.get("serial", "onbekend")))
     stamp = report.started.replace(":", "").replace("-", "")
     base = out_dir / f"report-{serial}-{stamp}"
     json_path, html_path = base.with_suffix(".json"), base.with_suffix(".html")
@@ -83,8 +83,8 @@ def list_history(out_dir: Path, limit: int = 15) -> list[dict]:
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
             history.append({"overall": data["overall"], "started": data["started"],
-                            "serial": data["dut_info"].get("serial", "?"),
-                            "model": data["dut_info"].get("model", "?"), "html": path.with_suffix(".html").name})
+                            "serial": data["client_info"].get("serial", "?"),
+                            "model": data["client_info"].get("model", "?"), "html": path.with_suffix(".html").name})
         except (OSError, ValueError, KeyError):
             continue  # kapot of half geschreven bestand: overslaan
     return history

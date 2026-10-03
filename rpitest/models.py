@@ -9,7 +9,7 @@ class Status(str, enum.Enum):
     PASS = "PASS"
     WARN = "WARN"
     FAIL = "FAIL"
-    SKIP = "SKIP"  # niet uitgevoerd (bv. omdat de DUT onbereikbaar is)
+    SKIP = "SKIP"  # niet uitgevoerd (bv. omdat de TEST-CLIENT onbereikbaar is)
 
 
 @dataclass
@@ -22,8 +22,8 @@ class CheckResult:
 
 @dataclass
 class Report:
-    tester_info: dict
-    dut_info: dict
+    server_info: dict
+    client_info: dict
     results: list[CheckResult]
     started: str
     finished: str

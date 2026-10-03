@@ -10,13 +10,13 @@ from .runner import run_all
 
 
 def add_common_arguments(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument("--mock", action="store_true", help="gesimuleerde testpi + DUT (geen hardware nodig)")
+    parser.add_argument("--mock", action="store_true", help="gesimuleerde TEST-SERVER + TEST-CLIENT (geen hardware nodig)")
     parser.add_argument("--fault", action="append", default=[], metavar="SPEC",
-                        help="fout injecteren in de mock, bv. stuck_low:D:5, bridge:D:5:6, open:7, eth_100, "
+                        help="fout injecteren in de mock, bv. stuck_low:C:5, bridge:C:5:6, open:7, eth_100, "
                              "no_wifi, no_bt, usb_slot3_dead, power_hot")
-    parser.add_argument("--dut-url", default=factory.default_dut_url(),
-                        help="adres van de agent op de DUT (echte hardware)")
-    parser.add_argument("--gpio-chip", help="pad van de gpiochip van de testpi (standaard: automatisch)")
+    parser.add_argument("--client-url", default=factory.default_client_url(),
+                        help="adres van de agent op de TEST-CLIENT (echte hardware)")
+    parser.add_argument("--gpio-chip", help="pad van de gpiochip van de TEST-SERVER (standaard: automatisch)")
     parser.add_argument("--usb-fixture", type=Path, metavar="BESTAND",
                         help="JSON-lijst met USB-slots i.p.v. config.USB_SLOTS")
     parser.add_argument("--out", "--reports", dest="out", type=Path, default=Path("reports"),
@@ -28,7 +28,7 @@ def context_factory(args) -> factory.ContextFactory:
     slots = factory.load_usb_slots(args.usb_fixture)
     if args.mock:
         return lambda: factory.mock_context(args.fault, slots)
-    return lambda: factory.real_context(args.dut_url, args.gpio_chip, slots)
+    return lambda: factory.real_context(args.client_url, args.gpio_chip, slots)
 
 
 def main(argv: list[str] | None = None) -> int:

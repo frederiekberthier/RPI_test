@@ -16,12 +16,12 @@ header h1{margin:0;font-size:1.5rem}
 main{flex:1;display:grid;grid-template-columns:27rem 1fr;gap:1.2rem;padding:1.2rem 1.4rem;min-height:0}
 section{min-height:0;display:flex;flex-direction:column;gap:1rem}
 .card{background:var(--panel);border:1px solid var(--line);border-radius:.8rem;padding:1rem 1.2rem}
-#dut{display:flex;gap:1rem;align-items:center}
+#client{display:flex;gap:1rem;align-items:center}
 .dot{width:1.3rem;height:1.3rem;border-radius:50%;background:var(--skip);flex:none}
 .dot.on{background:var(--pass);box-shadow:0 0 .8rem var(--pass)}
 .dot.busy{background:var(--accent)}
-#dut-title{font-weight:700}
-#dut-sub{color:var(--muted);font-size:.85rem;word-break:break-all}
+#client-title{font-weight:700}
+#client-sub{color:var(--muted);font-size:.85rem;word-break:break-all}
 button{font:inherit;color:var(--text);border:0;border-radius:.8rem;cursor:pointer}
 #primary{font-size:2rem;font-weight:800;padding:1.6rem 1rem;background:var(--accent);letter-spacing:.04em}
 #primary:disabled{background:#2a3644;color:var(--muted);cursor:not-allowed}
@@ -56,12 +56,12 @@ footer{display:flex;gap:1.4rem;justify-content:space-between;align-items:center;
 </style>
 </head>
 <body>
-<div id="conn" class="hidden">Verbinding met de tester verloren; er wordt opnieuw geprobeerd&hellip;</div>
+<div id="conn" class="hidden">Verbinding met de TEST-SERVER verloren; er wordt opnieuw geprobeerd&hellip;</div>
 <header><h1>Raspberry Pi tester</h1><span id="clock"></span></header>
 <main>
   <section id="left">
-    <div class="card" id="dut"><div class="dot" id="dut-dot"></div>
-      <div><div id="dut-title">&hellip;</div><div id="dut-sub"></div></div></div>
+    <div class="card" id="client"><div class="dot" id="client-dot"></div>
+      <div><div id="client-title">&hellip;</div><div id="client-sub"></div></div></div>
     <button id="primary" disabled>&hellip;</button>
     <button id="secondary" hidden></button>
     <a id="report-link" class="btn hidden" href="#">HTML-rapport openen</a>
@@ -71,9 +71,9 @@ footer{display:flex;gap:1.4rem;justify-content:space-between;align-items:center;
     <div class="card" id="steps">
       <strong>Zo test je een Pi</strong>
       <ol>
-        <li>Steek de <b>tester-SD</b> in de te testen Pi.</li>
+        <li>Steek de <b>TEST-CLIENT-SD</b> in de TEST-CLIENT.</li>
         <li>Sluit de <b>GPIO-kabels</b>, de <b>netwerkkabel</b> en de <b>USB-fixture</b> aan.</li>
-        <li>Zet de Pi aan en wacht tot hier <b>&ldquo;DUT verbonden&rdquo;</b> staat.</li>
+        <li>Zet de Pi aan en wacht tot hier <b>&ldquo;TEST-CLIENT verbonden&rdquo;</b> staat.</li>
         <li>Druk op <b>START TEST</b> (of op Enter).</li>
       </ol>
     </div>
@@ -82,7 +82,7 @@ footer{display:flex;gap:1.4rem;justify-content:space-between;align-items:center;
     <div id="results-wrap" class="hidden"><table><tbody id="results"></tbody></table></div>
   </section>
 </main>
-<footer><div id="history"></div><button id="shutdown" class="hidden">Testpi uitschakelen</button></footer>
+<footer><div id="history"></div><button id="shutdown" class="hidden">TEST-SERVER uitschakelen</button></footer>
 <noscript>Deze pagina heeft JavaScript nodig.</noscript>
 <script>
 "use strict";
@@ -99,7 +99,7 @@ let state = null, pending = false;
 function el(tag, cls, text) {
   const e = document.createElement(tag);
   if (cls) e.className = cls;
-  if (text !== undefined) e.textContent = text;   // altijd als tekst: de inhoud kan van de DUT komen
+  if (text !== undefined) e.textContent = text;   // altijd als tekst: de inhoud kan van de TEST-CLIENT komen
   return e;
 }
 
@@ -121,16 +121,16 @@ function primaryAction() {
   post(state.phase === "done" ? "/api/reset" : "/api/start");
 }
 
-function renderDut(s) {
-  const dot = $("dut-dot"), info = s.dut.info;
-  dot.className = "dot" + (s.phase === "running" ? " busy" : s.dut.ready ? " on" : "");
-  if (s.dut.ready && info) {
-    $("dut-title").textContent = "DUT verbonden";
-    $("dut-sub").textContent = [info.model, info.serial ? "serienr. " + info.serial : "", info.ram_mb ? info.ram_mb + " MB" : ""]
+function renderClient(s) {
+  const dot = $("client-dot"), info = s.client.info;
+  dot.className = "dot" + (s.phase === "running" ? " busy" : s.client.ready ? " on" : "");
+  if (s.client.ready && info) {
+    $("client-title").textContent = "TEST-CLIENT verbonden";
+    $("client-sub").textContent = [info.model, info.serial ? "serienr. " + info.serial : "", info.ram_mb ? info.ram_mb + " MB" : ""]
       .filter(Boolean).join(" · ");
   } else {
-    $("dut-title").textContent = s.phase === "running" ? "Test bezig" : "Wachten op de DUT…";
-    $("dut-sub").textContent = s.phase === "running" ? "" : "nog geen verbinding met de agent op de te testen Pi";
+    $("client-title").textContent = s.phase === "running" ? "Test bezig" : "Wachten op de TEST-CLIENT…";
+    $("client-sub").textContent = s.phase === "running" ? "" : "nog geen verbinding met de agent op de TEST-CLIENT";
   }
 }
 
@@ -140,10 +140,10 @@ function renderButtons(s) {
   link.classList.add("hidden");
   p.classList.remove("go");
   if (s.phase === "idle") {
-    p.disabled = !s.dut.ready;
-    p.textContent = s.dut.ready ? "START TEST" : "Wachten op DUT…";
-    p.classList.toggle("go", s.dut.ready);
-    $("hint").textContent = s.dut.ready ? "" : "De knop wordt actief zodra de DUT opgestart en verbonden is.";
+    p.disabled = !s.client.ready;
+    p.textContent = s.client.ready ? "START TEST" : "Wachten op TEST-CLIENT…";
+    p.classList.toggle("go", s.client.ready);
+    $("hint").textContent = s.client.ready ? "" : "De knop wordt actief zodra de TEST-CLIENT opgestart en verbonden is.";
   } else if (s.phase === "running") {
     p.disabled = true;
     p.textContent = "Test bezig… " + Math.floor(s.elapsed) + " s";
@@ -203,7 +203,7 @@ function renderFooter(s) {
   $("shutdown").classList.toggle("hidden", !s.shutdown_allowed);
 }
 
-function render(s) { renderDut(s); renderButtons(s); renderResults(s); renderFooter(s); }
+function render(s) { renderClient(s); renderButtons(s); renderResults(s); renderFooter(s); }
 
 async function refresh() {
   const r = await fetch("/api/state", {cache: "no-store"});
@@ -219,7 +219,7 @@ async function loop() {
 
 $("primary").addEventListener("click", primaryAction);
 $("shutdown").addEventListener("click", () => {
-  if (confirm("De testpi uitschakelen?")) post("/api/shutdown", {confirm: true});
+  if (confirm("De TEST-SERVER uitschakelen?")) post("/api/shutdown", {confirm: true});
 });
 // Enter of spatie doet hetzelfde als de grote knop; zo werkt ook een USB-knop die een toets stuurt.
 document.addEventListener("keydown", e => {

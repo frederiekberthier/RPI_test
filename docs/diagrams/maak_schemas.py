@@ -112,15 +112,15 @@ def draw_cable_inset(ax, x0: float, y: float) -> None:
     ax.add_patch(Rectangle((x0 + 4.6, y - 0.52), 5.0, 1.04, fc="none", ec="#999", ls="--", lw=1))  # krimpkous
     ax.text(x0 + 7.1, y - 0.75, "weerstand 220 Ω (rood-rood-bruin-goud)\nin krimpkous", ha="center", va="top",
             fontsize=8.5, color="#444")
-    ax.text(x0 - 0.5, y - 0.75, "pennetje in breakout A\n(testpi)", ha="left", va="top", fontsize=8.5, color="#444")
-    ax.text(x0 + 14.5, y - 0.75, "pennetje in breakout B\n(DUT)", ha="right", va="top", fontsize=8.5, color="#444")
+    ax.text(x0 - 0.5, y - 0.75, "pennetje in breakout A\n(TEST-SERVER)", ha="left", va="top", fontsize=8.5, color="#444")
+    ax.text(x0 + 14.5, y - 0.75, "pennetje in breakout B\n(TEST-CLIENT)", ha="right", va="top", fontsize=8.5, color="#444")
 
 
 def breadboard_figure():
     fig, ax = plt.subplots(figsize=(13, 10))
     top = 13.2
-    draw_board(ax, 7.0, top, "A – testpi")
-    draw_board(ax, 24.6, top, "B – DUT (te testen Pi)")
+    draw_board(ax, 7.0, top, "A – TEST-SERVER")
+    draw_board(ax, 24.6, top, "B – TEST-CLIENT")
 
     # bundel in het midden
     mid = 15.8
@@ -172,17 +172,17 @@ def link(ax, y, colour, label, sub="", style="-", lw=4, x0=8.4, x1=15.6):
 
 def overview_figure():
     fig, ax = plt.subplots(figsize=(12, 7.4))
-    box(ax, 0.6, 3.0, 7.8, 7.0, "Testpi (Pi 5)",
+    box(ax, 0.6, 3.0, 7.8, 7.0, "TEST-SERVER (Pi 5)",
         ["stuurt de tests aan", "maakt het rapport (JSON + HTML)", "", "eigen GPIO (breakout A)",
          "ethernet 192.168.77.1: ping, iperf3", "wifi: accesspoint", "bluetooth: zichtbaar + scannen"], BLUE)
-    box(ax, 15.6, 3.0, 7.8, 7.0, "Te testen Pi (Pi 4/5)",
-        ["draait de agent (tester-SD)", "voert opdrachten uit, beslist niets", "", "onder test:",
+    box(ax, 15.6, 3.0, 7.8, 7.0, "TEST-CLIENT (Pi 4/5)",
+        ["draait de agent (TEST-CLIENT-SD)", "voert opdrachten uit, beslist niets", "", "onder test:",
          "GPIO (breakout B)  ·  ethernet 192.168.77.2", "wifi  ·  bluetooth  ·  4 USB-A-poorten",
          "voeding  ·  temperatuur  ·  CPU  ·  RAM"], GREEN)
 
     link(ax, 9.0, BLUE, "GPIO 2–27 + 3× GND", "via 220 Ω (zie breadboard-schema)")
     link(ax, 7.2, "#2a7f2a", "Ethernet", "UTP-kabel, 1 Gb/s: link, ping, iperf3")
-    link(ax, 5.4, PURPLE, "Wifi 2,4 + 5 GHz", "testpi = accesspoint, DUT verbindt", style=(0, (4, 3)), lw=3)
+    link(ax, 5.4, PURPLE, "Wifi 2,4 + 5 GHz", "TEST-SERVER = accesspoint, TEST-CLIENT verbindt", style=(0, (4, 3)), lw=3)
     link(ax, 3.7, PURPLE, "Bluetooth", "beide richtingen zichtbaar", style=(0, (1, 2)), lw=3)
 
     # scherm en voedingen
@@ -195,7 +195,7 @@ def overview_figure():
         ax.text(x, y_box + 0.5, "eigen voeding", ha="center", va="center", fontsize=9, color=INK)
         ax.plot([x, x], [y_from, y_to], "-", color="#b8962e", lw=2)
 
-    # USB-fixture onder de DUT
+    # USB-fixture onder de TEST-CLIENT
     ax.plot([19.5, 19.5], [3.0, 2.4], "-", color=INK, lw=2)
     ax.text(19.8, 2.7, "USB", fontsize=9, va="center", color="#444")
     for i, label in enumerate(("SLOT1\nUSB 3", "SLOT2\nUSB 3", "SLOT3\nUSB 2", "SLOT4\nUSB 2")):

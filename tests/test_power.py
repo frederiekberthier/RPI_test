@@ -9,7 +9,7 @@ from rpitest.agent.client import LocalClient, RemoteGpioPort
 from rpitest.agent.core import Agent
 from rpitest.checks import power
 from rpitest.context import Context
-from rpitest.gpio.mock import DUT as GPIO_DUT, TESTER as GPIO_TESTER, MockWiring
+from rpitest.gpio.mock import CLIENT as GPIO_CLIENT, SERVER as GPIO_SERVER, MockWiring
 from rpitest.models import Status
 from rpitest.runner import run_all
 from rpitest.system import mock as sysmock, parsers, stress
@@ -22,8 +22,8 @@ INFO = {"model": "Raspberry Pi 5 (mock)", "ram_mb": 8192, "serial": "MOCK0001"}
 def make_ctx(*faults):
     env = sysmock.MockEnv(faults)
     wiring = MockWiring()
-    client = LocalClient(Agent(wiring.port(GPIO_DUT), lambda: INFO, env.ops(sysmock.DUT)))
-    return Context(wiring.port(GPIO_TESTER), RemoteGpioPort(client), client, {}, env.ops(sysmock.TESTER))
+    client = LocalClient(Agent(wiring.port(GPIO_CLIENT), lambda: INFO, env.ops(sysmock.CLIENT)))
+    return Context(wiring.port(GPIO_SERVER), RemoteGpioPort(client), client, {}, env.ops(sysmock.SERVER))
 
 
 def results(*faults):
@@ -32,7 +32,7 @@ def results(*faults):
 
 # ---------- de check met de simulatie ----------
 
-def test_healthy_dut_passes_all_power_checks():
+def test_healthy_client_passes_all_power_checks():
     r = results()
     assert set(r) == {"power.sensors", "power.supply", "power.thermal", "power.cpu", "power.memory"}
     assert all(x.status is Status.PASS for x in r.values()), {n: x.summary for n, x in r.items()}
@@ -76,7 +76,7 @@ def test_power_is_part_of_the_full_run_and_healthy_run_passes():
 def test_stress_is_started_with_configured_duration_and_always_stopped_on_failure():
     ctx = make_ctx()
     calls = []
-    real_call = ctx.dut.call
+    real_call = ctx.client.call
 
     def spy(method, **kw):
         calls.append((method, kw))
@@ -84,7 +84,7 @@ def test_stress_is_started_with_configured_duration_and_always_stopped_on_failur
             raise OpsError("kapot")
         return real_call(method, **kw)
 
-    ctx.dut.call = spy
+    ctx.client.call = spy
     out = power.run(ctx)
     assert out[0].status is Status.FAIL
     assert ("stress_start", {"seconds": config.STRESS_SECONDS, "ram_mb": config.STRESS_RAM_MB}) in calls
@@ -95,7 +95,7 @@ def test_agent_validates_stress_parameters():
     ctx = make_ctx()
     for params in ({"seconds": 1, "ram_mb": 64}, {"seconds": 60, "ram_mb": 100000}, {"seconds": "60", "ram_mb": 64}):
         with pytest.raises(Exception, match="Error"):
-            ctx.dut.call("stress_start", **params)
+            ctx.client.call("stress_start", **params)
 
 
 # ---------- beoordeling zonder simulatie ----------

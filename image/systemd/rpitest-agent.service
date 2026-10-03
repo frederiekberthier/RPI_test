@@ -1,5 +1,5 @@
 [Unit]
-Description=Raspberry Pi tester: agent op de te testen Pi
+Description=Raspberry Pi tester: agent op de TEST-CLIENT
 After=NetworkManager.service network-online.target bluetooth.service
 Wants=network-online.target bluetooth.service
 

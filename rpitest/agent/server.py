@@ -1,5 +1,5 @@
 """Minimale JSON-RPC over HTTP (enkel stdlib). Alleen bedoeld voor de directe kabel
-tussen testpi en DUT: er is geen authenticatie, bind dus nooit op een openbaar netwerk."""
+tussen TEST-SERVER en TEST-CLIENT: er is geen authenticatie, bind dus nooit op een openbaar netwerk."""
 
 from __future__ import annotations
 
@@ -23,7 +23,7 @@ class _Handler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", 0))
             request = json.loads(self.rfile.read(length))
             body = {"result": self.agent.dispatch(request["method"], request.get("params", {}))}
-        except Exception as exc:  # fouten gaan terug naar de tester, niet in de agent-log
+        except Exception as exc:  # fouten gaan terug naar de TEST-SERVER, niet in de agent-log
             body = {"error": f"{type(exc).__name__}: {exc}"}
         payload = json.dumps(body).encode()
         self.send_response(200)

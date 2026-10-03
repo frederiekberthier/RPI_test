@@ -6,7 +6,7 @@ from rpitest import usbtools
 from rpitest.agent.client import LocalClient, RemoteGpioPort
 from rpitest.agent.core import Agent
 from rpitest.context import Context
-from rpitest.gpio.mock import DUT as GPIO_DUT, TESTER as GPIO_TESTER, MockWiring
+from rpitest.gpio.mock import CLIENT as GPIO_CLIENT, SERVER as GPIO_SERVER, MockWiring
 from rpitest.models import Status
 from rpitest.runner import run_all
 from rpitest.system import mock as sysmock, parsers, storage
@@ -170,8 +170,8 @@ def test_prepare_without_yes_does_not_write(monkeypatch, capsys):
 def make_ctx(*faults, slots=None):
     env = sysmock.MockEnv(faults)
     wiring = MockWiring()
-    client = LocalClient(Agent(wiring.port(GPIO_DUT), lambda: INFO, env.ops(sysmock.DUT)))
-    return Context(wiring.port(GPIO_TESTER), RemoteGpioPort(client), client, {}, env.ops(sysmock.TESTER), slots)
+    client = LocalClient(Agent(wiring.port(GPIO_CLIENT), lambda: INFO, env.ops(sysmock.CLIENT)))
+    return Context(wiring.port(GPIO_SERVER), RemoteGpioPort(client), client, {}, env.ops(sysmock.SERVER), slots)
 
 
 def usb_results(*faults, **kwargs):
@@ -227,7 +227,7 @@ def test_custom_fixture_with_only_two_slots():
 def test_kernel_event_timing_boot_vs_test():
     from rpitest.checks.usb import check_kernel
 
-    class Dut:
+    class FakeClient:
         def __init__(self, events):
             self.events = events
 
@@ -235,7 +235,7 @@ def test_kernel_event_timing_boot_vs_test():
             return self.events
 
     def status(events):
-        return check_kernel(Context(None, None, Dut(events), {}), 100.0).status
+        return check_kernel(Context(None, None, FakeClient(events), {}), 100.0).status
 
     reset = {"category": "reset", "text": "x"}
     assert status([{**reset, "ts": 5.0}]) is Status.PASS  # resets bij het opstarten zijn normaal
@@ -249,7 +249,7 @@ def test_agent_validates_block_and_size():
     for params in ({"block": "mmcblk0", "size_mb": 4}, {"block": "sda", "size_mb": 100000},
                    {"block": "sda; reboot", "size_mb": 4}):
         with pytest.raises(Exception, match="Error"):
-            ctx.dut.call("usb_storage_test", **params)
+            ctx.client.call("usb_storage_test", **params)
 
 
 def test_parse_usb_events_ignores_normal_messages():

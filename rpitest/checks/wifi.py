@@ -1,4 +1,4 @@
-"""Wifi van de DUT: de testpi speelt accesspoint (2,4 en 5 GHz), de DUT scant en verbindt.
+"""Wifi van de TEST-CLIENT: de TEST-SERVER speelt accesspoint (2,4 en 5 GHz), de TEST-CLIENT scant en verbindt.
 
 Beheer verloopt over de ethernetkabel, dus de wifi-verbinding mag vrij komen en gaan."""
 
@@ -16,16 +16,16 @@ _TOOL_ERRORS = (RpcError, OpsError)
 
 
 def run(ctx: Context) -> list[CheckResult]:
-    if ctx.tester_ops is None:
-        return [CheckResult("wifi", Status.SKIP, "overgeslagen: testpi heeft geen systeem-backend")]
+    if ctx.server_ops is None:
+        return [CheckResult("wifi", Status.SKIP, "overgeslagen: TEST-SERVER heeft geen systeem-backend")]
     try:
-        if not ctx.tester_ops.wifi_info()["ifaces"]:
-            return [CheckResult("wifi", Status.SKIP, "overgeslagen: de testpi heeft geen wifi, dus geen accesspoint")]
-        dut_info = ctx.dut.call("wifi_info")
+        if not ctx.server_ops.wifi_info()["ifaces"]:
+            return [CheckResult("wifi", Status.SKIP, "overgeslagen: de TEST-SERVER heeft geen wifi, dus geen accesspoint")]
+        client_info = ctx.client.call("wifi_info")
     except _TOOL_ERRORS as exc:
         return [CheckResult("wifi.radio", Status.FAIL, f"wifi-gegevens niet op te halen: {exc}")]
 
-    radio = check_radio(dut_info)
+    radio = check_radio(client_info)
     results = [radio]
     for label, band, channel in config.WIFI_BANDS:
         if radio.status is Status.FAIL:
@@ -37,7 +37,7 @@ def run(ctx: Context) -> list[CheckResult]:
 
 def check_radio(info: dict) -> CheckResult:
     if not info["ifaces"]:
-        return CheckResult("wifi.radio", Status.FAIL, "geen wifi-interface op de DUT (defecte chip of firmware)", info)
+        return CheckResult("wifi.radio", Status.FAIL, "geen wifi-interface op de TEST-CLIENT (defecte chip of firmware)", info)
     blocked = [r for r in info.get("rfkill", []) if r.get("hard_blocked")]
     if blocked:
         return CheckResult("wifi.radio", Status.FAIL, "wifi staat hardwarematig uit (rfkill)", info)
@@ -46,7 +46,7 @@ def check_radio(info: dict) -> CheckResult:
 
 def _scan_for_ssid(ctx: Context, freq_check) -> dict | None:
     for attempt in range(config.WIFI_SCAN_TRIES):
-        networks = ctx.dut.call("wifi_scan", _timeout=60)
+        networks = ctx.client.call("wifi_scan", _timeout=60)
         for net in networks:
             if net["ssid"] == config.WIFI_SSID and freq_check(net["freq_mhz"]):
                 return net
@@ -61,36 +61,36 @@ def check_band(ctx: Context, label: str, band: str, channel: int) -> CheckResult
     details: dict = {"band": band, "channel": channel}
     try:
         try:
-            ap = ctx.tester_ops.wifi_hotspot_start(config.WIFI_SSID, config.WIFI_PASSWORD, band, channel)
-        except OpsError as exc:  # probleem aan de testpi, niet aan de DUT
-            return CheckResult(name, Status.SKIP, f"hotspot starten op de testpi mislukt: {exc}")
+            ap = ctx.server_ops.wifi_hotspot_start(config.WIFI_SSID, config.WIFI_PASSWORD, band, channel)
+        except OpsError as exc:  # probleem aan de TEST-SERVER, niet aan de TEST-CLIENT
+            return CheckResult(name, Status.SKIP, f"hotspot starten op de TEST-SERVER mislukt: {exc}")
         details["hotspot_ip"] = ap["ip"]
 
         seen = _scan_for_ssid(ctx, lambda f: (f >= 4900) == is_5g)
         if seen is None:
-            return CheckResult(name, Status.FAIL, f"DUT ziet het {label}-accesspoint niet (radio/antenne defect?)",
+            return CheckResult(name, Status.FAIL, f"TEST-CLIENT ziet het {label}-accesspoint niet (radio/antenne defect?)",
                                details)
         details["scan"] = seen
 
-        connect = ctx.dut.call("wifi_connect", ssid=config.WIFI_SSID, password=config.WIFI_PASSWORD, _timeout=60)
-        link = ctx.dut.call("wifi_link")
+        connect = ctx.client.call("wifi_connect", ssid=config.WIFI_SSID, password=config.WIFI_PASSWORD, _timeout=60)
+        link = ctx.client.call("wifi_link")
         details.update(connect=connect, link=link)
         if not link.get("connected") or not link.get("ip"):
             return CheckResult(name, Status.FAIL, "verbonden zonder IP-adres of verbinding valt weg", details)
 
         count = config.PING_COUNT
-        to_dut = ctx.tester_ops.ping(link["ip"], count)
-        to_ap = ctx.dut.call("net_ping", host=ap["ip"], count=count, _timeout=count * 1.3 + 15)
-        details.update(ping_tester_to_dut=to_dut, ping_dut_to_tester=to_ap)
+        to_client = ctx.server_ops.ping(link["ip"], count)
+        to_ap = ctx.client.call("net_ping", host=ap["ip"], count=count, _timeout=count * 1.3 + 15)
+        details.update(ping_server_to_client=to_client, ping_client_to_server=to_ap)
     except _TOOL_ERRORS as exc:
         return CheckResult(name, Status.FAIL, f"test mislukt: {exc}", details)
     finally:
         _cleanup(ctx)
 
-    loss = max(to_dut["loss_pct"], to_ap["loss_pct"])
+    loss = max(to_client["loss_pct"], to_ap["loss_pct"])
     signal = link.get("signal_dbm")
     summary = (f"verbonden op {link.get('freq_mhz')} MHz, signaal {signal} dBm, "
-               f"{link.get('tx_mbit')} Mb/s, verlies {to_dut['loss_pct']:.0f}%/{to_ap['loss_pct']:.0f}%")
+               f"{link.get('tx_mbit')} Mb/s, verlies {to_client['loss_pct']:.0f}%/{to_ap['loss_pct']:.0f}%")
     if loss > 0:
         return CheckResult(name, Status.FAIL, f"pakketverlies over wifi: {summary}", details)
     if signal is not None and signal < config.WIFI_MIN_SIGNAL_DBM:
@@ -100,10 +100,10 @@ def check_band(ctx: Context, label: str, band: str, channel: int) -> CheckResult
 
 def _cleanup(ctx: Context) -> None:
     try:
-        ctx.dut.call("wifi_forget")
+        ctx.client.call("wifi_forget")
     except _TOOL_ERRORS:
         pass
     try:
-        ctx.tester_ops.wifi_hotspot_stop()
+        ctx.server_ops.wifi_hotspot_stop()
     except OpsError:
         pass

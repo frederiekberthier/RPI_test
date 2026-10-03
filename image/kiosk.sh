@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Toont het scherm van de tester schermvullend in Chromium. Wordt gestart door de autostart van labwc.
+# Toont het scherm van de TEST-SERVER schermvullend in Chromium. Wordt gestart door de autostart van labwc.
 # Herstart de browser als hij stopt, en wacht eerst tot de webdienst antwoordt.
 URL="${RPITEST_URL:-http://127.0.0.1:8080/}"
 

@@ -1,6 +1,6 @@
-# Opstelling: testpi + te testen Pi (breadboard)
+# Opstelling: TEST-SERVER + TEST-CLIENT (breadboard)
 
-![Overzicht van de opstelling: testpi en DUT, verbonden via GPIO, ethernet, wifi en bluetooth; USB-fixture en schermen](img/overzicht.svg)
+![Overzicht van de opstelling: TEST-SERVER en TEST-CLIENT, verbonden via GPIO, ethernet, wifi en bluetooth; USB-fixture en schermen](img/overzicht.svg)
 
 *De afbeeldingen worden gegenereerd door `docs/diagrams/maak_schemas.py`. Pas dat script aan, niet de SVG's.*
 
@@ -23,14 +23,14 @@
 1. **Verbind nooit 3V3 of 5V tussen de twee Pi's.** Dat zijn de headerpinnen 1, 2, 4 en 17. Twee voedingen tegen elkaar kunnen een Pi kapotmaken. Enkel GND en de 26 GPIO's gaan over.
 2. **Elke GPIO-lijn loopt via een weerstand van 220 Ω.** Zo blijft de stroom bij een softwarefout of een defecte pin beperkt tot ongeveer 15 mA (3,3 V / 220 Ω).
 3. **Steek de GPIO-kabel alleen in of uit als beide Pi's uit staan.**
-4. **Geen HAT's of andere hardware** op de header van de DUT tijdens de test.
+4. **Geen HAT's of andere hardware** op de header van de TEST-CLIENT tijdens de test.
 5. GPIO0 en GPIO1 (pin 27 en 28, HAT-EEPROM) worden niet getest en niet verbonden.
 
 ## Bedrading
 
 ![Breadboardschema: twee breakouts met per pin aangegeven welke kabel erin hoort](img/breadboard.svg)
 
-Verbind elke GPIO-pin op breakout A (testpi) met **dezelfde** pin op breakout B (DUT), en drie GND-pinnen.
+Verbind elke GPIO-pin op breakout A (TEST-SERVER) met **dezelfde** pin op breakout B (TEST-CLIENT), en drie GND-pinnen.
 
 **Weerstandskabels.** Op een breadboard bezet de breakout alle kolommen waarin de pinnen zitten, dus
 er is geen vrije plek om een weerstand tussen twee pinnen te zetten. Daarom zit de weerstand in de kabel zelf:
@@ -75,16 +75,16 @@ Rechtstreekse UTP-kabel tussen de twee ethernetpoorten, zonder crossoverkabel. V
 
 | | IP |
 |---|---|
-| testpi | 192.168.77.1 |
-| DUT | 192.168.77.2 |
+| TEST-SERVER | 192.168.77.1 |
+| TEST-CLIENT | 192.168.77.2 |
 
 Het vaste adres wordt door `install.sh` ingesteld (als laatste stap, via NetworkManager). De adressen staan in
 `rpitest/config.py`; de scripts lezen ze daar.
 
 ## Software
 
-Alles wordt geïnstalleerd en ingesteld met **één script**: `sudo ./install.sh tester` voor de testpi en
-`sudo ./install.sh dut` voor de tester-SD van de te testen Pi. Het installeert de pakketten, de software, het scherm en de
+Alles wordt geïnstalleerd en ingesteld met **één script**: `sudo ./install.sh server` voor de TEST-SERVER en
+`sudo ./install.sh client` voor de TEST-CLIENT-SD van de TEST-CLIENT. Het installeert de pakketten, de software, het scherm en de
 diensten, zet I2C, SPI en de seriële console uit (die houden GPIO-pinnen bezet), stelt het wifi-land in en zet het
 vaste IP-adres. Met `--check` zie je eerst wat er al op de Pi staat.
 
@@ -92,45 +92,45 @@ Het stappenplan staat in de [README](../README.md#installeren-op-een-pi-stappenp
 [eerste-installatie.md](eerste-installatie.md). Basis is **Raspberry Pi OS Trixie, 64-bit**; Bookworm werkt niet, want die
 levert libgpiod 1.x.
 
-De tests starten daarna vanzelf: de testpi toont het scherm met de startknop en de DUT draait de agent. Zie [image.md](image.md).
+De tests starten daarna vanzelf: de TEST-SERVER toont het scherm met de startknop en de TEST-CLIENT draait de agent. Zie [image.md](image.md).
 
 ## Netwerk, wifi en bluetooth
 
 | Check | Wat gebeurt er | Wat vraagt het |
 |---|---|---|
-| `net.link` | linksnelheid en duplex van de DUT-ethernetpoort (verwacht 1000 Mb/s) | gigabitpoort op de testpi, goede kabel |
+| `net.link` | linksnelheid en duplex van de ethernetpoort van de TEST-CLIENT (verwacht 1000 Mb/s) | gigabitpoort op de TEST-SERVER, goede kabel |
 | `net.latency` | 20 pings in beide richtingen: geen verlies, gem. RTT onder 2 ms | |
 | `net.throughput` | `iperf3` 5 s in beide richtingen: PASS vanaf 800 Mb/s, WARN vanaf 500 | `iperf3` op beide Pi's |
 | `net.errors` | rx/tx/CRC-fouten die tijdens de test bijkomen | |
-| `wifi.radio` | DUT heeft een wifi-interface en geen hardware-rfkill | |
-| `wifi.2.4GHz`, `wifi.5GHz` | testpi start een accesspoint (NetworkManager-hotspot, kanaal 6 en 36); de DUT scant, verbindt, krijgt een IP, pingt beide richtingen; signaalsterkte | wifi op de testpi, wifi-land ingesteld op beide Pi's |
-| `bt.controller` | DUT heeft een ingeschakelde bluetooth-controller | |
-| `bt.receive` | testpi is zichtbaar, DUT moet hem zien | `bluez` op beide Pi's |
-| `bt.transmit` | DUT is zichtbaar, testpi moet hem zien | |
+| `wifi.radio` | TEST-CLIENT heeft een wifi-interface en geen hardware-rfkill | |
+| `wifi.2.4GHz`, `wifi.5GHz` | TEST-SERVER start een accesspoint (NetworkManager-hotspot, kanaal 6 en 36); de TEST-CLIENT scant, verbindt, krijgt een IP, pingt beide richtingen; signaalsterkte | wifi op de TEST-SERVER, wifi-land ingesteld op beide Pi's |
+| `bt.controller` | TEST-CLIENT heeft een ingeschakelde bluetooth-controller | |
+| `bt.receive` | TEST-SERVER is zichtbaar, TEST-CLIENT moet hem zien | `bluez` op beide Pi's |
+| `bt.transmit` | TEST-CLIENT is zichtbaar, TEST-SERVER moet hem zien | |
 
 Aandachtspunten:
 - **Wifi-land** staat op beide Pi's op `BE` (door `install.sh`; ander land met `WIFI_COUNTRY=<code>`). Zonder land
   kan het accesspoint op 5 GHz niet starten.
-- **De testpi gebruikt zijn wifi als accesspoint**, en zijn ethernetpoort voor de DUT. Beheer van
-  de testpi gebeurt dus met toetsenbord en scherm, of met een extra USB-ethernetadapter.
+- **De TEST-SERVER gebruikt zijn wifi als accesspoint**, en zijn ethernetpoort voor de TEST-CLIENT. Beheer van
+  de TEST-SERVER gebeurt dus met toetsenbord en scherm, of met een extra USB-ethernetadapter.
 - **Wifi en bluetooth** delen op de Pi dezelfde chip. De bluetooth-test draait daarom na de wifi-test.
 - Het wifi-netwerk `RPITEST` en het wachtwoord staan in `rpitest/config.py`. Het is een wegwerpnetwerk
   dat alleen tijdens de test bestaat; het wachtwoord is geen geheim.
-- Als de testpi geen wifi of bluetooth heeft, staan die checks op **SKIP** en wordt het eindoordeel
+- Als de TEST-SERVER geen wifi of bluetooth heeft, staan die checks op **SKIP** en wordt het eindoordeel
   **INCOMPLETE**, niet PASS.
 - Alle drempelwaarden staan in `rpitest/config.py`. Het zijn eerste schattingen; stel ze bij met een bekend goede Pi.
 
 ## USB
 
 Software kan niet weten of een USB-poort werkt als er niets in zit. Daarom gebruiken we een
-**fixture met vier voorbereide teststicks** die tegelijk in de vier USB-A-poorten van de DUT zitten.
+**fixture met vier voorbereide teststicks** die tegelijk in de vier USB-A-poorten van de TEST-CLIENT zitten.
 
 **Onderdelen:** vier sticks van minstens 1 GB. Twee moeten echte USB 3-sticks zijn (voor de blauwe
 poorten), twee mogen USB 2 zijn. Ze moeten naast elkaar in de gestapelde poorten passen: gebruik
-smalle sticks of korte USB-verlengkabels, bevestigd in een blok of plank zodat de DUT er telkens
+smalle sticks of korte USB-verlengkabels, bevestigd in een blok of plank zodat de TEST-CLIENT er telkens
 op dezelfde manier aan gekoppeld wordt.
 
-**Sticks voorbereiden** (op een Linux-pc of de testpi, één keer per stick):
+**Sticks voorbereiden** (op een Linux-pc of de TEST-SERVER, één keer per stick):
 ```
 sudo .venv/bin/python -m rpitest.usbtools scan                              # welk /dev/sdX is mijn stick?
 sudo .venv/bin/python -m rpitest.usbtools prepare /dev/sdX --label SLOT1    # toont wat er gewist wordt
@@ -150,7 +150,7 @@ groter dan 256 GiB en gekoppelde (mounted) apparaten.
 | `usb.fixture` | verschijnt alleen als er geen enkele teststick gevonden wordt: fixture niet aangesloten, of de USB-controller is defect |
 
 **Veiligheid:** de test schrijft alleen naar een apparaat waarvan sector 0 onze header bevat, en
-alleen in een testgebied vanaf 16 MB. Een stick van een student die toevallig in de DUT zit, heeft die
+alleen in een testgebied vanaf 16 MB. Een stick van een student die toevallig in de TEST-CLIENT zit, heeft die
 header niet en wordt niet aangeraakt. Alleen `/dev/sdX`-apparaten die aan USB hangen worden geaccepteerd.
 
 **Poorten benoemen:** de namen en drempels per slot staan in `USB_SLOTS` in `rpitest/config.py`.
@@ -162,8 +162,8 @@ De poort van de USB-C-voeding wordt niet getest.
 
 ## Voeding en temperatuur
 
-De DUT draait ca. een minuut met alle kernen op een rekentaak en een geheugentest. Intussen leest
-de tester elke 2 seconden temperatuur, klokfrequentie en de `throttled`-vlaggen van de firmware uit.
+De TEST-CLIENT draait ca. een minuut met alle kernen op een rekentaak en een geheugentest. Intussen leest
+de TEST-SERVER elke 2 seconden temperatuur, klokfrequentie en de `throttled`-vlaggen van de firmware uit.
 Dit komt als laatste in de run, zodat onderspanning uit de eerdere tests ook in de historie zit.
 
 | Check | Wat gebeurt er | Uitkomst |
@@ -175,11 +175,11 @@ Dit komt als laatste in de run, zodat onderspanning uit de eerdere tests ook in 
 | `power.memory` | 256 MB (max. de helft van het vrije geheugen) met vaste en adresafhankelijke patronen | FAIL bij fout teruggelezen blokken |
 
 Aandachtspunten:
-- **De voeding van de DUT telt mee.** Gebruik een goede voeding (Pi 4: 5,1 V / 3 A; Pi 5: 5 V / 5 A of de
+- **De voeding van de TEST-CLIENT telt mee.** Gebruik een goede voeding (Pi 4: 5,1 V / 3 A; Pi 5: 5 V / 5 A of de
   officiële 27 W) en bevestig met de zelftest op een bekend goede Pi dat die geen onderspanning geeft.
-  Een DUT met een slechte stroomingang valt dan door zijn eigen spanning af.
+  Een TEST-CLIENT met een slechte stroomingang valt dan door zijn eigen spanning af.
 - **Koeling is bepalend voor de temperatuur.** Een Pi zonder koelblok throttlet snel; dat is geen defect,
-  en daarom geeft throttling een WARN en geen FAIL. Laat een ventilator over de DUT blazen, zodat de
+  en daarom geeft throttling een WARN en geen FAIL. Laat een ventilator over de TEST-CLIENT blazen, zodat de
   metingen vergelijkbaar blijven.
 - De geheugentest is een korte controle in Python, geen vervanger van `memtester`. Zeldzame geheugenfouten
   vind je er niet mee.
@@ -190,15 +190,15 @@ Aandachtspunten:
 Dit is geschreven zonder echte hardware. Controleer bij de eerste run:
 
 1. **Chiplabels.** `--list-chips` moet op de Pi 5 een chip met label `pinctrl-rp1` (54 lijnen) tonen, en op de Pi 4 `pinctrl-bcm2711`. Wijkt het af, pas dan `HEADER_CHIP_LABELS` in `rpitest/gpio/real.py` aan.
-2. **Zelftest met een bekend goede DUT.** Laat de test eerst draaien met een Pi waarvan je weet dat hij werkt. Een fout dan wijst op de bedrading of de testpi. Los die eerst op, voor je de eerste echte student-Pi test.
+2. **Zelftest met een bekend goede TEST-CLIENT.** Laat de test eerst draaien met een Pi waarvan je weet dat hij werkt. Een fout dan wijst op de bedrading of de TEST-SERVER. Los die eerst op, voor je de eerste echte student-Pi test.
 3. **GPIO2 en GPIO3.** Beide kanten hebben een vaste pull-up van 1,8 kΩ. Een lage stand komt via 220 Ω tegen één van die pull-ups uit, wat ongeveer 0,4 V geeft. Dat hoort ruim onder de drempel te liggen; controleer dat deze twee pinnen slagen.
 4. **Uitvoerformaten van de tools.** De parsers voor `ping`, `iperf3`, `nmcli`, `iw` en `bluetoothctl`
    zijn geschreven op basis van het formaat dat ik me herinner. Het rapport bewaart de ruwe gegevens
    per check in de JSON; controleer ze bij de eerste run. Zijn ze anders, stuur me dan de uitvoer, dan
    pas ik de parsers en de voorbeelden in `tests/test_parsers.py` aan.
-5. **Bluetooth zichtbaar maken.** De testpi blijft zichtbaar zolang een `bluetoothctl`-sessie openstaat.
+5. **Bluetooth zichtbaar maken.** De TEST-SERVER blijft zichtbaar zolang een `bluetoothctl`-sessie openstaat.
    Dat werkt volgens mijn kennis, maar is niet getest.
-6. **Hotspot op 5 GHz.** Controleer dat `nmcli dev wifi hotspot ... band a channel 36` op de testpi werkt.
+6. **Hotspot op 5 GHz.** Controleer dat `nmcli dev wifi hotspot ... band a channel 36` op de TEST-SERVER werkt.
 7. **USB.** Controleer drie dingen:
    - dat `usbtools scan` je sticks toont met het juiste label na `prepare`;
    - dat de onderhandelde snelheid op de blauwe poorten echt 5000 Mb/s is met USB 3-sticks. Zo niet, kijk dan of de stick of de poort het probleem is;

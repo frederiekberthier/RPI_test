@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Voorcontrole: kijkt zonder iets te wijzigen of deze Pi klaar is voor de installatie.
 #
-#   ./image/preflight.sh tester     # voor de testpi (Pi 5, met scherm)
-#   ./image/preflight.sh dut        # voor de tester-SD van de te testen Pi
+#   ./image/preflight.sh server     # voor de TEST-SERVER (Pi 5, met scherm)
+#   ./image/preflight.sh client        # voor de TEST-CLIENT-SD van de TEST-CLIENT
 #
 # install.sh roept dit zelf eerst aan (overslaan kan met --skip-preflight).
 # Eindigt met een foutcode als er iets is dat de installatie zou laten mislukken.
@@ -28,10 +28,10 @@ fi
 
 model="$({ tr -d '\0' </proc/device-tree/model; } 2>/dev/null)"  # accolades: ook de fout van het openen verdwijnt
 case "$ROLE:$model" in
-  tester:*"Raspberry Pi 5"*) pass "model: $model" ;;
-  tester:*) note "de testpi hoort een Pi 5 te zijn; gevonden: ${model:-onbekend} (niet getest)" ;;
-  dut:*"Raspberry Pi 4"*|dut:*"Raspberry Pi 5"*) pass "model: $model" ;;
-  dut:*) note "dit is geen Pi 4 of 5: ${model:-onbekend}" ;;
+  server:*"Raspberry Pi 5"*) pass "model: $model" ;;
+  server:*) note "de TEST-SERVER hoort een Pi 5 te zijn; gevonden: ${model:-onbekend} (niet getest)" ;;
+  client:*"Raspberry Pi 4"*|client:*"Raspberry Pi 5"*) pass "model: $model" ;;
+  client:*) note "dit is geen Pi 4 of 5: ${model:-onbekend}" ;;
 esac
 
 if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 11) else 1)' 2>/dev/null; then
@@ -42,7 +42,7 @@ fi
 
 free_kb="$(df -k --output=avail / 2>/dev/null | tail -n 1 | tr -d ' ')"
 need_kb=$((2 * 1024 * 1024))
-[ "$ROLE" = tester ] && need_kb=$((3 * 1024 * 1024))  # de browser neemt ruimte
+[ "$ROLE" = server ] && need_kb=$((3 * 1024 * 1024))  # de browser neemt ruimte
 if [ -n "$free_kb" ] && [ "$free_kb" -ge "$need_kb" ]; then
   pass "vrije ruimte: $((free_kb / 1024)) MB"
 else
@@ -83,9 +83,9 @@ if [ -d "$APP_DIR" ]; then
   note "$APP_DIR bestaat al: de installatie werkt de software bij"
 fi
 
-if [ "$ROLE" = tester ]; then
+if [ "$ROLE" = server ]; then
   echo
-  echo "Testpi: scherm, wifi en bluetooth"
+  echo "TEST-SERVER: scherm, wifi en bluetooth"
   if command -v labwc >/dev/null 2>&1; then
     pass "bureaublad (labwc) aanwezig"
   else
@@ -118,8 +118,8 @@ if [ "$ROLE" = tester ]; then
   fi
 else
   echo
-  echo "DUT-SD"
-  note "de DUT hoeft geen scherm of bureaublad te hebben; Lite is genoeg"
+  echo "TEST-CLIENT-SD"
+  note "de TEST-CLIENT hoeft geen scherm of bureaublad te hebben; Lite is genoeg"
 fi
 
 finish_checks

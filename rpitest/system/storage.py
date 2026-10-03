@@ -2,7 +2,7 @@
 
 Veiligheid: er wordt alleen geschreven naar een apparaat waarvan sector 0 onze header
 (MAGIC + label) bevat, en uitsluitend in een testgebied ver voorbij het begin van de stick.
-Een stick van een student die toevallig in de DUT zit, heeft die header niet en blijft onaangeroerd."""
+Een stick van een student die toevallig in de TEST-CLIENT zit, heeft die header niet en blijft onaangeroerd."""
 
 from __future__ import annotations
 

@@ -38,7 +38,7 @@ def _password(value) -> str:
 
 
 class Agent:
-    """Draait op de DUT. Voert opdrachten van de tester uit via een vaste lijst methodes met
+    """Draait op de TEST-CLIENT. Voert opdrachten van de TEST-SERVER uit via een vaste lijst methodes met
     gevalideerde parameters; er is bewust geen manier om willekeurige commando's uit te voeren."""
 
     def __init__(self, gpio: GpioPort, info_fn: Callable[[], dict], ops: SystemOps | None = None):
@@ -82,7 +82,7 @@ class Agent:
         with self._lock:
             try:
                 return fn(**params)
-            except OpsError as exc:  # laat de tester het verschil zien tussen "faalt" en "kan niet"
+            except OpsError as exc:  # laat de TEST-SERVER het verschil zien tussen "faalt" en "kan niet"
                 raise RuntimeError(f"OpsError: {exc}") from exc
 
     @property

@@ -61,8 +61,8 @@ def test_ip_addresses_come_from_the_python_config_not_from_the_scripts():
     for script in SCRIPTS:
         assert "192.168." not in script.read_text(encoding="utf-8"), script.name
     text = INSTALL.read_text()
-    assert "config_value TESTER_IP" in text and "config_value DUT_IP" in text
-    assert hasattr(config, "TESTER_IP") and hasattr(config, "DUT_IP") and hasattr(config, "AGENT_PORT")
+    assert "config_value SERVER_IP" in text and "config_value CLIENT_IP" in text
+    assert hasattr(config, "SERVER_IP") and hasattr(config, "CLIENT_IP") and hasattr(config, "AGENT_PORT")
 
 
 def test_every_file_the_install_script_installs_exists():
@@ -115,7 +115,7 @@ def test_kiosk_url_matches_the_ui_port_and_restarts_the_browser():
 
 
 def test_ui_binds_locally_by_default():
-    # de testpi opent tijdens de wifi-test een hotspot: de startknop mag daar niet bereikbaar zijn
+    # de TEST-SERVER opent tijdens de wifi-test een hotspot: de startknop mag daar niet bereikbaar zijn
     unit = read_unit(IMAGE / "systemd" / "rpitest-ui.service")["Service"]["ExecStart"]
     assert "--host" not in unit
     help_text = subprocess.run(["python", "-m", "rpitest.ui", "--help"], capture_output=True, text=True,
@@ -167,7 +167,7 @@ def test_preflight_and_verify_know_the_roles():
     for name in ("preflight.sh", "verify.sh"):
         text = (IMAGE / name).read_text(encoding="utf-8")
         assert 'need_role "$ROLE"' in text and "finish_checks" in text
-    assert "tester" in (IMAGE / "preflight.sh").read_text() and "labwc" in (IMAGE / "preflight.sh").read_text()
+    assert "server" in (IMAGE / "preflight.sh").read_text() and "labwc" in (IMAGE / "preflight.sh").read_text()
 
 
 def test_verify_matches_the_code_it_checks():

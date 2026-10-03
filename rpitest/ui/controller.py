@@ -1,4 +1,4 @@
-"""De toestandsmachine achter het scherm: wacht op de DUT, start een run op een knop, houdt
+"""De toestandsmachine achter het scherm: wacht op de TEST-CLIENT, start een run op een knop, houdt
 de voortgang bij en bewaart het rapport. Geen HTTP of HTML hier, zodat het los te testen is."""
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from ..models import CheckResult, Report
 from ..runner import CHECK_GROUPS, Check, Progress, run_all
 
 GROUP_LABELS = {
-    "connect": "Verbinding met de DUT",
+    "connect": "Verbinding met de TEST-CLIENT",
     "gpio": "GPIO-pinnen",
     "usb": "USB-poorten",
     "network": "Netwerk (bedraad)",
@@ -34,33 +34,33 @@ class Controller:
         self._clock = clock
         self._lock = threading.Lock()
         self._phase = "idle"  # idle | running | done
-        self._dut: dict = {"ready": False, "info": None}
+        self._client: dict = {"ready": False, "info": None}
         self._run: dict = {}
         self._last: dict | None = None
         self._abort = False
         self._thread: threading.Thread | None = None
         self._stop_polling = threading.Event()
 
-    # ---------------------------------------------------------------- DUT-detectie
-    def refresh_dut(self) -> None:
-        """Eén controle of de DUT bereikbaar is. Tijdens een run wordt er niet gecontroleerd."""
+    # ---------------------------------------------------------------- detectie van de TEST-CLIENT
+    def refresh_client(self) -> None:
+        """Eén controle of de TEST-CLIENT bereikbaar is. Tijdens een run wordt er niet gecontroleerd."""
         with self._lock:
             if self._phase == "running":
                 return
         info = self._probe()
         with self._lock:
             if self._phase != "running":
-                self._dut = {"ready": info is not None, "info": info}
+                self._client = {"ready": info is not None, "info": info}
 
     def start_polling(self, interval: float = 2.0) -> threading.Thread:
         def loop() -> None:
             while not self._stop_polling.wait(interval):
                 try:
-                    self.refresh_dut()
+                    self.refresh_client()
                 except Exception:  # de detectie mag nooit de server doden
                     pass
 
-        thread = threading.Thread(target=loop, daemon=True, name="dut-probe")
+        thread = threading.Thread(target=loop, daemon=True, name="client-probe")
         thread.start()
         return thread
 
@@ -74,8 +74,8 @@ class Controller:
                 return False, "er loopt al een test"
             if self._phase == "done":
                 return False, "druk eerst op 'Nieuwe test'"
-            if not self._dut["ready"]:
-                return False, "de DUT is nog niet bereikbaar"
+            if not self._client["ready"]:
+                return False, "de TEST-CLIENT is nog niet bereikbaar"
             self._phase = "running"
             self._abort = False
             self._run = {
@@ -101,7 +101,7 @@ class Controller:
                 return False, "er loopt nog een test"
             self._phase = "idle"
             self._run, self._last = {}, None
-        self.refresh_dut()
+        self.refresh_client()
         return True, "klaar voor een nieuwe test"
 
     def join(self, timeout: float | None = None) -> None:
@@ -172,7 +172,7 @@ class Controller:
             elapsed = round(self._clock() - run["started"], 1) if run else 0.0
             state = {
                 "phase": self._phase,
-                "dut": dict(self._dut),
+                "client": dict(self._client),
                 "abort_requested": self._abort,
                 "elapsed": elapsed,
                 "current": run.get("current"),

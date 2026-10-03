@@ -1,7 +1,7 @@
 """Echte systeemopdrachten op Raspberry Pi OS Trixie (NetworkManager, BlueZ, iperf3, iw).
 
 Alle commando's worden als lijst van argumenten uitgevoerd (nooit via een shell), zodat
-waarden van de tester geen commando's kunnen injecteren."""
+waarden van de TEST-SERVER geen commando's kunnen injecteren."""
 
 from __future__ import annotations
 

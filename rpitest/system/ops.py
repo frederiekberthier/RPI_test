@@ -1,7 +1,7 @@
-"""Wat testpi en DUT op systeemniveau kunnen doen (netwerk, wifi, bluetooth).
+"""Wat TEST-SERVER en TEST-CLIENT op systeemniveau kunnen doen (netwerk, wifi, bluetooth).
 
-LinuxOps doet het echt (subprocess), MockOps simuleert het. Op de DUT stelt de agent een
-beperkte, gevalideerde deelverzameling van deze methodes beschikbaar aan de tester.
+LinuxOps doet het echt (subprocess), MockOps simuleert het. Op de TEST-CLIENT stelt de agent een
+beperkte, gevalideerde deelverzameling van deze methodes beschikbaar aan de TEST-SERVER.
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ class SystemOps(ABC):
 
     @abstractmethod
     def wifi_hotspot_start(self, ssid: str, password: str, band: str, channel: int) -> dict:
-        """Start een accesspoint en geef {'ip'} terug (enkel testpi)."""
+        """Start een accesspoint en geef {'ip'} terug (enkel TEST-SERVER)."""
 
     @abstractmethod
     def wifi_hotspot_stop(self) -> None: ...

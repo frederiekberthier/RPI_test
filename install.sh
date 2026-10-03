@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Eén script om een Raspberry Pi klaar te maken als testpi of als tester-SD voor de te testen Pi (DUT).
+# Eén script om een Raspberry Pi klaar te maken als TEST-SERVER of als TEST-CLIENT-SD voor de TEST-CLIENT.
 # Het doet alles: voorcontrole, pakketten (apt), software, hostnaam, vrije GPIO-pinnen, wifi-land, scherm
-# met kiosk (testpi), systemd-dienst en het vaste IP-adres.
+# met kiosk (TEST-SERVER), systemd-dienst en het vaste IP-adres.
 #
-#   sudo ./install.sh tester            # de testpi (Pi 5, met scherm)
-#   sudo ./install.sh dut               # de tester-SD voor de te testen Pi
+#   sudo ./install.sh server            # de TEST-SERVER (Pi 5, met scherm)
+#   sudo ./install.sh client               # de TEST-CLIENT-SD voor de TEST-CLIENT
 #
 # Opties:
 #   --check           toon alleen wat al geïnstalleerd is en wat ontbreekt; wijzigt niets
 #   --force           pas alles opnieuw toe, ook wat al aanwezig lijkt
-#   --readonly        (alleen dut) maak het bestandssysteem na de installatie alleen-lezen
+#   --readonly        (alleen client) maak het bestandssysteem na de installatie alleen-lezen
 #   --skip-preflight  sla de voorcontrole over
 #   -h, --help        deze uitleg
 #
@@ -34,7 +34,7 @@ READONLY=0
 SKIP_PREFLIGHT="${SKIP_PREFLIGHT:-0}"
 for arg in "$@"; do
   case "$arg" in
-    tester|dut) ROLE="$arg" ;;
+    server|client) ROLE="$arg" ;;
     --check) CHECK_ONLY=1 ;;
     --force) FORCE=1 ;;
     --readonly) READONLY=1 ;;
@@ -43,9 +43,9 @@ for arg in "$@"; do
     *) die "onbekende optie '$arg' (zie --help)" ;;
   esac
 done
-[ -n "$ROLE" ] || die "geef 'tester' of 'dut' op (zie --help)"
-if [ "$READONLY" -eq 1 ] && [ "$ROLE" != dut ]; then
-  die "--readonly hoort alleen bij dut"
+[ -n "$ROLE" ] || die "geef 'server' of 'client' op (zie --help)"
+if [ "$READONLY" -eq 1 ] && [ "$ROLE" != client ]; then
+  die "--readonly hoort alleen bij client"
 fi
 
 need_root
@@ -57,17 +57,17 @@ OPTIONAL_PACKAGES=(libraspberrypi-bin)  # levert vcgencmd; zonder dit werkt de o
 KIOSK_USER="${KIOSK_USER:-${SUDO_USER:-}}"
 KIOSK_HOME="${KIOSK_HOME:-}"
 
-if [ "$ROLE" = tester ]; then
+if [ "$ROLE" = server ]; then
   PACKAGES+=(chromium)
   UNIT=rpitest-ui.service
-  MY_IP="$(config_value TESTER_IP)"
+  MY_IP="$(config_value SERVER_IP)"
   COMPONENTS=(packages app hostname pins wificountry login kiosk unit network)
   if [ -z "$KIOSK_HOME" ] && [ -n "$KIOSK_USER" ] && id "$KIOSK_USER" >/dev/null 2>&1; then
     KIOSK_HOME="$(getent passwd "$KIOSK_USER" | cut -d: -f6)"
   fi
 else
   UNIT=rpitest-agent.service
-  MY_IP="$(config_value DUT_IP)"
+  MY_IP="$(config_value CLIENT_IP)"
   COMPONENTS=(packages app hostname pins wificountry unit network)
   [ "$READONLY" -eq 1 ] && COMPONENTS+=(readonly)
 fi
@@ -77,7 +77,7 @@ describe() {
   case "$1" in
     packages)    echo "Pakketten (apt)" ;;
     app)         echo "Software in $VENV" ;;
-    hostname)    echo "Hostnaam rpitest-$ROLE" ;;
+    hostname)    echo "Hostnaam test-$ROLE" ;;
     pins)        echo "GPIO-pinnen vrij (I2C, SPI en seriële poort uit)" ;;
     wificountry) echo "Wifi-land $WIFI_COUNTRY" ;;
     login)       echo "Automatisch inloggen en schermbeveiliging uit" ;;
@@ -151,11 +151,11 @@ apply_app() {
 
 check_hostname() {
   DETAIL="nu: $(hostname)"
-  [ "$(hostname)" = "rpitest-$ROLE" ]
+  [ "$(hostname)" = "test-$ROLE" ]
 }
 
 apply_hostname() {
-  local name="rpitest-$ROLE"
+  local name="test-$ROLE"
   hostnamectl set-hostname "$name" || return 1
   # /etc/hosts bijwerken, anders klaagt sudo dat de hostnaam niet te vinden is
   if grep -q '^127\.0\.1\.1' "$HOSTS_FILE" 2>/dev/null; then
@@ -365,5 +365,5 @@ fi
 echo "Volgende stappen:"
 echo "  1. sudo reboot"
 echo "  2. sudo ./image/verify.sh $ROLE"
-[ "$ROLE" = tester ] && echo "  3. sluit de netwerkkabel van de testpi aan op de DUT (niet op het schoolnetwerk)"
+[ "$ROLE" = server ] && echo "  3. sluit de netwerkkabel van de TEST-SERVER aan op de TEST-CLIENT (niet op het schoolnetwerk)"
 exit 0

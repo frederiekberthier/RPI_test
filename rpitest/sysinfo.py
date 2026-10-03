@@ -1,4 +1,4 @@
-"""Identificatie van de Pi waarop dit draait (voor testpi én DUT)."""
+"""Identificatie van de Pi waarop dit draait (voor TEST-SERVER én TEST-CLIENT)."""
 
 from __future__ import annotations
 

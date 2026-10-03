@@ -1,6 +1,6 @@
 """HTTP-laag van het scherm (enkel stdlib). Luistert standaard alleen op 127.0.0.1: de kiosk-browser
 draait op dezelfde Pi, en de start-/afsluitknoppen mogen niet vanaf een netwerk bereikbaar zijn
-(de testpi opent tijdens de wifi-test zelf een hotspot)."""
+(de TEST-SERVER opent tijdens de wifi-test zelf een hotspot)."""
 
 from __future__ import annotations
 
@@ -115,7 +115,7 @@ def _make_handler(controller: Controller, reports_dir: Path, allow_shutdown: boo
             elif controller.state()["phase"] == "running":
                 self._json({"ok": False, "message": "er loopt een test"}, 409)
             else:
-                self._json({"ok": True, "message": "de testpi wordt uitgeschakeld"})
+                self._json({"ok": True, "message": "de TEST-SERVER wordt uitgeschakeld"})
                 subprocess.Popen(["systemctl", "poweroff"])
 
     return Handler

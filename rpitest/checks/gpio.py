@@ -1,7 +1,7 @@
 """GPIO-checks met twee Pi's die pin-voor-pin met elkaar verbonden zijn.
 
-Aanname: de testpi is zelf in orde (zie de zelftest met een bekend goede DUT). Een fout die
-alleen in één richting optreedt, wijst daardoor naar de DUT.
+Aanname: de TEST-SERVER is zelf in orde (zie de zelftest met een bekend goede TEST-CLIENT). Een fout die
+alleen in één richting optreedt, wijst daardoor naar de TEST-CLIENT.
 """
 
 from __future__ import annotations
@@ -12,8 +12,8 @@ from ..context import Context
 from ..gpio.ports import EXTERNAL_PULLUP, PINS, Pull, label
 from ..models import CheckResult, Status
 
-TESTER_TO_DUT = "tester->dut"
-DUT_TO_TESTER = "dut->tester"
+SERVER_TO_CLIENT = "server->client"
+CLIENT_TO_SERVER = "client->server"
 
 
 def run(ctx: Context) -> list[CheckResult]:
@@ -30,13 +30,13 @@ def _summarize(name: str, pins, issues: dict[int, list[str]], extra: str = "") -
 
 
 def check_pulls(ctx: Context, pins=PINS) -> CheckResult:
-    """Interne pull-up/-down van de DUT. Vindt kortsluiting naar GND/3V3 en defecte pads."""
-    ctx.tester_gpio.set_input(pins, Pull.NONE)  # testpi laat de lijnen los
-    ctx.dut_gpio.set_input(pins, Pull.UP)
-    up = ctx.dut_gpio.read(pins)
-    ctx.dut_gpio.set_input(pins, Pull.DOWN)
-    down = ctx.dut_gpio.read(pins)
-    ctx.dut_gpio.set_input(pins, Pull.NONE)
+    """Interne pull-up/-down van de TEST-CLIENT. Vindt kortsluiting naar GND/3V3 en defecte pads."""
+    ctx.server_gpio.set_input(pins, Pull.NONE)  # TEST-SERVER laat de lijnen los
+    ctx.client_gpio.set_input(pins, Pull.UP)
+    up = ctx.client_gpio.read(pins)
+    ctx.client_gpio.set_input(pins, Pull.DOWN)
+    down = ctx.client_gpio.read(pins)
+    ctx.client_gpio.set_input(pins, Pull.NONE)
 
     issues: dict[int, list[str]] = {}
     for p in pins:
@@ -68,11 +68,11 @@ def check_drive(ctx: Context, pins=PINS) -> CheckResult:
     """Stuur elke pin hoog en laag vanuit beide kanten; de andere kant leest alle pinnen."""
     # richting -> gelezen pin -> {(gestuurde pin, niveau, gelezen waarde)}
     wrong: dict[str, dict[int, set]] = defaultdict(lambda: defaultdict(set))
-    ports = {"tester": ctx.tester_gpio, "dut": ctx.dut_gpio}
+    ports = {"server": ctx.server_gpio, "client": ctx.client_gpio}
     try:
         for direction, (driver, reader) in {
-            TESTER_TO_DUT: ("tester", "dut"),
-            DUT_TO_TESTER: ("dut", "tester"),
+            SERVER_TO_CLIENT: ("server", "client"),
+            CLIENT_TO_SERVER: ("client", "server"),
         }.items():
             drv, rd = ports[driver], ports[reader]
             for level in (1, 0):
@@ -129,10 +129,10 @@ def _diagnose(wrong):
             continue
         if len(per_dir) == 2:
             msg = "geen signaal in beide richtingen (onderbroken verbinding of dode pin)"
-        elif TESTER_TO_DUT in per_dir:
-            msg = "DUT-pin volgt de testpi niet (defecte ingang/pad of slechte verbinding)"
+        elif SERVER_TO_CLIENT in per_dir:
+            msg = "pin van de TEST-CLIENT volgt de TEST-SERVER niet (defecte ingang/pad of slechte verbinding)"
         else:
-            msg = "signaal van DUT-pin komt niet aan (defecte uitgang/pad of slechte verbinding)"
+            msg = "signaal van de pin van de TEST-CLIENT komt niet aan (defecte uitgang/pad of slechte verbinding)"
         issues.setdefault(m, []).append(msg)
 
     for pair in bridges:

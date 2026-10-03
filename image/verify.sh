@@ -2,10 +2,10 @@
 # Natest: controleert na de installatie (en na de herstart) of alles draait zoals bedoeld.
 # Wijzigt niets.
 #
-#   sudo ./image/verify.sh tester
-#   sudo ./image/verify.sh dut
+#   sudo ./image/verify.sh server
+#   sudo ./image/verify.sh client
 #
-# Draai dit eerst zonder de DUT aangesloten en daarna nog eens met alles aangesloten.
+# Draai dit eerst zonder de TEST-CLIENT aangesloten en daarna nog eens met alles aangesloten.
 set -uo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 
@@ -15,14 +15,14 @@ need_role "$ROLE"
 printf 'Natest voor de %s\n\n' "$ROLE"
 
 PY="$VENV/bin/python"
-TESTER_IP="$(config_value TESTER_IP)"
-DUT_IP="$(config_value DUT_IP)"
+SERVER_IP="$(config_value SERVER_IP)"
+CLIENT_IP="$(config_value CLIENT_IP)"
 AGENT_PORT="$(config_value AGENT_PORT)"
 UI_PORT=8080
 
-# Vraagt de agent op de DUT of hij antwoordt (zelfde aanroep die de tester gebruikt).
+# Vraagt de agent op de TEST-CLIENT of hij antwoordt (zelfde aanroep die de TEST-SERVER gebruikt).
 agent_pong() {
-  curl -fsS -m 4 -X POST "http://$DUT_IP:$AGENT_PORT/rpc" -H 'Content-Type: application/json' \
+  curl -fsS -m 4 -X POST "http://$CLIENT_IP:$AGENT_PORT/rpc" -H 'Content-Type: application/json' \
     -d '{"method":"ping","params":{}}' 2>/dev/null | grep -q pong
 }
 
@@ -54,7 +54,7 @@ fi
 
 echo
 echo "Diensten"
-if [ "$ROLE" = tester ]; then
+if [ "$ROLE" = server ]; then
   check_unit rpitest-ui.service
 else
   check_unit rpitest-agent.service
@@ -67,8 +67,8 @@ if nmcli -t -f NAME connection show | grep -x "$NM_PROFILE" >/dev/null; then
 else
   fail "NetworkManager-profiel '$NM_PROFILE' ontbreekt"
 fi
-want_ip="$TESTER_IP"
-[ "$ROLE" = dut ] && want_ip="$DUT_IP"
+want_ip="$SERVER_IP"
+[ "$ROLE" = client ] && want_ip="$CLIENT_IP"
 if ip -4 addr show dev "$ETH_IFACE" 2>/dev/null | grep -q "inet $want_ip/"; then
   pass "$ETH_IFACE heeft $want_ip"
 else
@@ -92,7 +92,7 @@ require_command iw "pakket iw"
 require_command bluetoothctl "pakket bluez"
 require_command vcgencmd "pakket libraspberrypi-bin; zonder dit geen onderspanningsmeting" note
 
-if [ "$ROLE" = tester ]; then
+if [ "$ROLE" = server ]; then
   echo
   echo "Scherm"
   state="$(curl -fsS -m 5 "http://127.0.0.1:$UI_PORT/api/state" 2>/dev/null)"
@@ -120,19 +120,19 @@ if [ "$ROLE" = tester ]; then
     note "de kioskbrowser draait niet: normaal tot de eerste herstart en automatische login"
   fi
   echo
-  echo "Verbinding met de DUT"
+  echo "Verbinding met de TEST-CLIENT"
   if agent_pong; then
-    pass "de agent op de DUT ($DUT_IP:$AGENT_PORT) antwoordt"
+    pass "de agent op de TEST-CLIENT ($CLIENT_IP:$AGENT_PORT) antwoordt"
   else
-    note "de agent op de DUT antwoordt niet: nog niet aangesloten of opgestart?"
+    note "de agent op de TEST-CLIENT antwoordt niet: nog niet aangesloten of opgestart?"
   fi
 else
   echo
   echo "Agent"
   if agent_pong; then
-    pass "de agent antwoordt op $DUT_IP:$AGENT_PORT"
+    pass "de agent antwoordt op $CLIENT_IP:$AGENT_PORT"
   else
-    note "de agent antwoordt niet op $DUT_IP:$AGENT_PORT (geen kabel? het adres wordt pas actief bij link)"
+    note "de agent antwoordt niet op $CLIENT_IP:$AGENT_PORT (geen kabel? het adres wordt pas actief bij link)"
   fi
   if [ "$(findmnt -n -o FSTYPE / 2>/dev/null)" = overlay ]; then
     note "alleen-lezen overlay is actief: wijzigingen gaan bij een herstart verloren (zo hoort het voor de klaar-SD)"

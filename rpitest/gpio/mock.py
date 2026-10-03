@@ -1,4 +1,4 @@
-"""Gesimuleerde testpi + DUT met een kabel ertussen, inclusief foutinjectie.
+"""Gesimuleerde TEST-SERVER + TEST-CLIENT met een kabel ertussen, inclusief foutinjectie.
 
 Pin n van de ene Pi is verbonden met pin n van de andere. Fouten:
   stuck_low/stuck_high  pin hangt vast aan GND/3V3 (aan een kant)
@@ -13,8 +13,8 @@ from dataclasses import dataclass
 
 from .ports import EXTERNAL_PULLUP, GpioPort, Pull
 
-TESTER, DUT = "T", "D"
-_OTHER = {TESTER: DUT, DUT: TESTER}
+SERVER, CLIENT = "S", "C"
+_OTHER = {SERVER: CLIENT, CLIENT: SERVER}
 
 
 @dataclass
@@ -49,7 +49,7 @@ class MockPort(GpioPort):
 
 class MockWiring:
     def __init__(self) -> None:
-        self._ports = {TESTER: MockPort(self, TESTER), DUT: MockPort(self, DUT)}
+        self._ports = {SERVER: MockPort(self, SERVER), CLIENT: MockPort(self, CLIENT)}
         self._stuck: dict[tuple[str, int], int] = {}
         self._bridges: list[tuple[str, int, int]] = []
         self._opens: set[int] = set()

@@ -169,7 +169,7 @@ def box(tmp_path):
     return Sandbox(tmp_path)
 
 
-def installed_state(box, role="tester", *args):
+def installed_state(box, role="server", *args):
     result = box.run(role, "--skip-preflight", *args)
     assert result.returncode == 0, result.clean
     return result
@@ -178,19 +178,19 @@ def installed_state(box, role="tester", *args):
 # ---------------------------------------------------------------- alleen controleren
 
 def test_check_mode_on_an_empty_pi_reports_missing_and_changes_nothing(box):
-    result = box.run("tester", "--check")
+    result = box.run("server", "--check")
     assert result.returncode == 3, result.clean
     assert "ontbreekt" in result.clean and "ontbreken: python3-venv" in result.clean
     # alles ontbreekt echt: er is niets "onbekend" (regressie: cmp gaf 2 terug bij een ontbrekend bestand)
     assert "[onbekend" not in result.clean and result.clean.count("[ontbreekt") == 9
-    assert "Voer uit: sudo ./install.sh tester" in result.clean
+    assert "Voer uit: sudo ./install.sh server" in result.clean
     assert box.mutations() == []
     assert not (box.root / "app" / "REVISION").exists() and not list((box.root / "systemd").iterdir())
 
 
 def test_check_mode_after_installing_says_everything_is_there(box):
     installed_state(box)
-    result = box.run("tester", "--check")
+    result = box.run("server", "--check")
     assert result.returncode == 0, result.clean
     assert result.clean.count("[aanwezig") == 9 and "ontbreekt " not in result.clean.replace("ontbreken", "")
 
@@ -206,12 +206,12 @@ def test_first_install_does_everything_in_a_sensible_order(box):
         assert pkg in install_call
     assert any(c.startswith("python3 -m venv --system-site-packages") for c in calls)
     assert sum(c.startswith("pip install --upgrade --force-reinstall --no-deps") for c in calls) == 1
-    assert "hostnamectl set-hostname rpitest-tester" in calls
+    assert "hostnamectl set-hostname test-server" in calls
     for step in ("do_i2c 1", "do_spi 1", "do_serial_hw 1", "do_serial_cons 1", "do_wifi_country BE",
                  "do_boot_behaviour B4", "do_blanking 1"):
         assert f"raspi-config nonint {step}" in calls, step
     assert "systemctl enable rpitest-ui.service" in calls
-    assert f"ipv4.addresses {config.TESTER_IP}/24" in next(c for c in calls if c.startswith("nmcli connection add"))
+    assert f"ipv4.addresses {config.SERVER_IP}/24" in next(c for c in calls if c.startswith("nmcli connection add"))
     # het netwerk gaat als laatste: daarna zijn er geen wijzigende opdrachten meer
     last_mutation = box.mutations()[-1]
     assert last_mutation.startswith("nmcli connection up"), last_mutation
@@ -223,7 +223,7 @@ def test_first_install_does_everything_in_a_sensible_order(box):
     autostart = (box.root / "home" / ".config" / "labwc" / "autostart").read_text()
     assert autostart.strip() == f"{(box.root / 'app').as_posix()}/kiosk.sh &"
     assert (box.root / "app" / "kiosk.sh").read_bytes() == (ROOT / "image/kiosk.sh").read_bytes()
-    assert "127.0.1.1\trpitest-tester" in (box.root / "hosts").read_text()
+    assert "127.0.1.1\ttest-server" in (box.root / "hosts").read_text()
 
 
 # ---------------------------------------------------------------- is het al geïnstalleerd?
@@ -231,7 +231,7 @@ def test_first_install_does_everything_in_a_sensible_order(box):
 def test_second_run_recognises_everything_and_does_nothing(box):
     installed_state(box)
     before = len(box.mutations())
-    result = box.run("tester", "--skip-preflight")
+    result = box.run("server", "--skip-preflight")
     assert result.returncode == 0, result.clean
     assert len(box.mutations()) == before, box.mutations()[before:]  # niets opnieuw gedaan
     assert "Gedaan: 0 | al aanwezig: 9 | mislukt: 0" in result.clean
@@ -240,14 +240,14 @@ def test_second_run_recognises_everything_and_does_nothing(box):
 
 def test_only_the_missing_packages_are_installed(box):
     box.install_packages(*[p for p in box.packages if p not in ("iperf3", "chromium")])
-    box.run("tester", "--skip-preflight")
+    box.run("server", "--skip-preflight")
     installs = [c for c in box.calls() if c.startswith("apt-get install")]
     assert installs == ["apt-get install -y iperf3 chromium"]
 
 
 def test_all_packages_present_means_apt_is_not_touched(box):
     box.install_packages(*box.packages)
-    box.run("tester", "--skip-preflight")
+    box.run("server", "--skip-preflight")
     assert not [c for c in box.calls() if c.startswith("apt-get")]
 
 
@@ -255,7 +255,7 @@ def test_a_new_revision_replaces_only_the_software_and_restarts_the_service(box)
     installed_state(box)
     before = len(box.calls())
     (box.state / "rev").write_text("nieuwe-revisie-0001\n")
-    result = box.run("tester", "--skip-preflight")
+    result = box.run("server", "--skip-preflight")
     new = box.calls()[before:]
     assert sum(c.startswith("pip install") for c in new) == 1
     assert "systemctl try-restart rpitest-ui.service" in new
@@ -267,7 +267,7 @@ def test_a_new_revision_replaces_only_the_software_and_restarts_the_service(box)
 def test_a_deleted_unit_file_counts_as_missing_not_unknown(box):
     installed_state(box)
     (box.root / "systemd" / "rpitest-ui.service").unlink()
-    result = box.run("tester", "--check")
+    result = box.run("server", "--check")
     assert result.returncode == 3 and "[ontbreekt ] Dienst rpitest-ui.service" in result.clean
     assert "[onbekend" not in result.clean
 
@@ -275,68 +275,68 @@ def test_a_deleted_unit_file_counts_as_missing_not_unknown(box):
 def test_check_mode_flags_an_outdated_version(box):
     installed_state(box)
     (box.state / "rev").write_text("nieuwe-revisie-0002\n")
-    result = box.run("tester", "--check")
+    result = box.run("server", "--check")
     assert result.returncode == 3 and "verouderd" in result.clean
 
 
 def test_a_broken_import_in_the_venv_counts_as_not_installed(box):
     installed_state(box)
     (box.state / "import_broken").write_text("x")
-    result = box.run("tester", "--check")
+    result = box.run("server", "--check")
     assert result.returncode == 3 and "niet te importeren" in result.clean
 
 
 def test_force_reapplies_everything(box):
     installed_state(box)
     before = len(box.calls())
-    box.run("tester", "--skip-preflight", "--force")
+    box.run("server", "--skip-preflight", "--force")
     new = box.calls()[before:]
     assert any(c.startswith("apt-get install -y") for c in new)
-    assert any(c.startswith("pip install") for c in new) and "hostnamectl set-hostname rpitest-tester" in new
+    assert any(c.startswith("pip install") for c in new) and "hostnamectl set-hostname test-server" in new
     assert any(c.startswith("nmcli connection add") for c in new)
 
 
-# ---------------------------------------------------------------- de DUT
+# ---------------------------------------------------------------- de TEST-CLIENT
 
-def test_dut_gets_the_agent_but_no_kiosk(box):
-    box.run("dut", "--skip-preflight")
+def test_client_gets_the_agent_but_no_kiosk(box):
+    box.run("client", "--skip-preflight")
     calls = box.calls()
     assert "systemctl enable rpitest-agent.service" in calls
     assert "systemctl enable rpitest-ui.service" not in calls
     assert not [c for c in calls if "do_boot_behaviour" in c or "chromium" in c]
-    assert f"ipv4.addresses {config.DUT_IP}/24" in next(c for c in calls if c.startswith("nmcli connection add"))
-    assert "hostnamectl set-hostname rpitest-dut" in calls
+    assert f"ipv4.addresses {config.CLIENT_IP}/24" in next(c for c in calls if c.startswith("nmcli connection add"))
+    assert "hostnamectl set-hostname test-client" in calls
     assert not (box.root / "home" / ".config").exists()
 
 
-def test_readonly_is_only_allowed_for_the_dut(box):
-    result = box.run("tester", "--readonly", "--skip-preflight")
-    assert result.returncode != 0 and "alleen bij dut" in result.clean
+def test_readonly_is_only_allowed_for_the_client(box):
+    result = box.run("server", "--readonly", "--skip-preflight")
+    assert result.returncode != 0 and "alleen bij client" in result.clean
     assert box.mutations() == []
-    box.run("dut", "--readonly", "--skip-preflight")
+    box.run("client", "--readonly", "--skip-preflight")
     assert "raspi-config nonint enable_overlayfs" in box.calls()
 
 
 # ---------------------------------------------------------------- onzekerheid en fouten
 
 def test_unknown_raspi_config_answers_are_reapplied_instead_of_trusted(box):
-    result = box.run("tester", "--check", RASPI_UNKNOWN="1")
+    result = box.run("server", "--check", RASPI_UNKNOWN="1")
     assert "[onbekend" in result.clean
-    box.run("tester", "--skip-preflight", RASPI_UNKNOWN="1")
+    box.run("server", "--skip-preflight", RASPI_UNKNOWN="1")
     assert "raspi-config nonint do_i2c 1" in box.calls()
 
 
 def test_one_failing_component_is_reported_but_the_rest_still_runs(box):
-    result = box.run("tester", "--skip-preflight", FAIL_PACKAGE="iperf3")
+    result = box.run("server", "--skip-preflight", FAIL_PACKAGE="iperf3")
     assert result.returncode == 1
     assert "niet gelukt: packages" in result.clean and "diagnose.sh" in result.clean
-    assert "hostnamectl set-hostname rpitest-tester" in box.calls()  # de rest ging door
+    assert "hostnamectl set-hostname test-server" in box.calls()  # de rest ging door
     assert "Volgende stappen" not in result.clean
 
 
 def test_a_failed_component_is_retried_on_the_next_run(box):
-    box.run("tester", "--skip-preflight", FAIL_PACKAGE="iperf3")
-    result = box.run("tester", "--skip-preflight")
+    box.run("server", "--skip-preflight", FAIL_PACKAGE="iperf3")
+    result = box.run("server", "--skip-preflight")
     assert result.returncode == 0, result.clean
     assert "iperf3" in (box.state / "dpkg").read_text()
 
@@ -345,19 +345,19 @@ def test_a_failed_component_is_retried_on_the_next_run(box):
 
 def test_refuses_anything_but_trixie(box):
     (box.root / "os-release").write_text("VERSION_CODENAME=bookworm\n")
-    result = box.run("tester", "--check")
+    result = box.run("server", "--check")
     assert result.returncode != 0 and "Trixie" in result.clean and "bookworm" in result.clean
     assert box.mutations() == []
 
 
 def test_requires_root(box):
-    result = box.run("tester", "--check", FAKE_UID="1000")
+    result = box.run("server", "--check", FAKE_UID="1000")
     assert result.returncode != 0 and "sudo" in result.clean
 
 
 def test_bad_arguments(box):
-    assert "onbekende optie" in box.run("tester", "--zomaar").clean
+    assert "onbekende optie" in box.run("server", "--zomaar").clean
     result = box.run("--check")
-    assert result.returncode != 0 and "tester' of 'dut" in result.clean
+    assert result.returncode != 0 and "server' of 'client" in result.clean
     help_text = box.run("--help")
-    assert help_text.returncode == 0 and "--check" in help_text.clean and "sudo ./install.sh tester" in help_text.clean
+    assert help_text.returncode == 0 and "--check" in help_text.clean and "sudo ./install.sh server" in help_text.clean

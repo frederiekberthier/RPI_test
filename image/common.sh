@@ -36,8 +36,8 @@ finish_checks() {
 
 need_role() {
   case "${1:-}" in
-    tester|dut) ;;
-    *) die "gebruik: $0 tester|dut" ;;
+    server|client) ;;
+    *) die "gebruik: $0 server|client" ;;
   esac
 }
 

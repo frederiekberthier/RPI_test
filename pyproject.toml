@@ -1,7 +1,7 @@
 [project]
 name = "rpitest"
 version = "0.1.0"
-description = "Hardwaretest voor tweedehands Raspberry Pi's (testpi + te testen Pi)"
+description = "Hardwaretest voor tweedehands Raspberry Pi's (TEST-SERVER + TEST-CLIENT)"
 requires-python = ">=3.11"
 dependencies = []
 

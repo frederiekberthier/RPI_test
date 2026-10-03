@@ -1,17 +1,17 @@
-"""Gesimuleerde testpi + DUT voor netwerk, wifi en bluetooth, met foutinjectie.
+"""Gesimuleerde TEST-SERVER + TEST-CLIENT voor netwerk, wifi en bluetooth, met foutinjectie.
 
 Fouten (via --fault op de opdrachtregel):
-  eth_100        DUT onderhandelt slechts 100 Mb/s
-  eth_errors     DUT telt veel ethernetfouten tijdens de test
+  eth_100        TEST-CLIENT onderhandelt slechts 100 Mb/s
+  eth_errors     TEST-CLIENT telt veel ethernetfouten tijdens de test
   eth_slow       lage doorvoer
   eth_loss       pakketverlies op de kabel
-  no_wifi        DUT heeft geen wifi-interface
-  wifi_5g_dead   5 GHz werkt niet op de DUT
-  wifi_weak      zwak wifi-signaal op de DUT
-  no_bt          DUT heeft geen bluetooth-controller
-  bt_dut_rx_dead DUT hoort geen andere bluetooth-apparaten
-  bt_dut_tx_dead niemand hoort de DUT
-  tester_no_wifi / tester_no_bt   de testpi mist wifi / bluetooth
+  no_wifi        TEST-CLIENT heeft geen wifi-interface
+  wifi_5g_dead   5 GHz werkt niet op de TEST-CLIENT
+  wifi_weak      zwak wifi-signaal op de TEST-CLIENT
+  no_bt          TEST-CLIENT heeft geen bluetooth-controller
+  bt_client_rx_dead TEST-CLIENT hoort geen andere bluetooth-apparaten
+  bt_client_tx_dead niemand hoort de TEST-CLIENT
+  server_no_wifi / server_no_bt   de TEST-SERVER mist wifi / bluetooth
   usb_slotN_dead / _usb2 / _corrupt / _slow   (N = 1..4) stick niet gevonden / valt terug op USB2 /
                  datafouten / traag
   usb_no_sticks  geen enkele teststick aanwezig (fixture niet aangesloten)
@@ -27,16 +27,16 @@ from __future__ import annotations
 from .. import config
 from .ops import OpsError, SystemOps
 
-TESTER, DUT = "T", "D"
+SERVER, CLIENT = "S", "C"
 USB_SLOT_FAULTS = {f"usb_slot{n}_{kind}" for n in range(1, 5) for kind in ("dead", "usb2", "corrupt", "slow")}
 POWER_FAULTS = {"power_undervolt", "power_undervolt_history", "power_hot", "power_warm", "power_throttle",
                 "power_cpu_error", "power_ram_error", "power_core_missing", "power_no_sensor"}
 KNOWN_FAULTS = frozenset(USB_SLOT_FAULTS | POWER_FAULTS | {"usb_no_sticks", "usb_overcurrent", "usb_disconnect"} | {
     "eth_100", "eth_errors", "eth_slow", "eth_loss", "no_wifi", "wifi_5g_dead", "wifi_weak",
-    "no_bt", "bt_dut_rx_dead", "bt_dut_tx_dead", "tester_no_wifi", "tester_no_bt",
+    "no_bt", "bt_client_rx_dead", "bt_client_tx_dead", "server_no_wifi", "server_no_bt",
 })
-BT_ADDRESS = {TESTER: "DC:A6:32:00:00:01", DUT: "DC:A6:32:00:00:02"}
-HOTSPOT_IP, DUT_WIFI_IP = "10.42.0.1", "10.42.0.57"
+BT_ADDRESS = {SERVER: "DC:A6:32:00:00:01", CLIENT: "DC:A6:32:00:00:02"}
+HOTSPOT_IP, CLIENT_WIFI_IP = "10.42.0.1", "10.42.0.57"
 
 
 class MockEnv:
@@ -46,9 +46,9 @@ class MockEnv:
             raise ValueError(f"onbekende fout(en): {sorted(unknown)}")
         self.faults = set(faults)
         self.hotspot: dict | None = None
-        self.dut_connected = False
-        self.discoverable = {TESTER: False, DUT: False}
-        self.dut_errors = 0
+        self.client_connected = False
+        self.discoverable = {SERVER: False, CLIENT: False}
+        self.client_errors = 0
         self.stress_polls_left = 0
         self.stress_polls_done = 0
 
@@ -66,16 +66,16 @@ class MockOps(SystemOps):
 
     # --- wired netwerk ---
     def net_iface_info(self) -> dict:
-        speed = 100 if self._side == DUT and self._fault("eth_100") else 1000
-        errors = self._env.dut_errors if self._side == DUT else 0
+        speed = 100 if self._side == CLIENT and self._fault("eth_100") else 1000
+        errors = self._env.client_errors if self._side == CLIENT else 0
         return {"name": "eth0", "operstate": "up", "carrier": 1, "speed_mbit": speed, "duplex": "full",
-                "mac": "dc:a6:32:00:00:0" + ("2" if self._side == DUT else "1"),
+                "mac": "dc:a6:32:00:00:0" + ("2" if self._side == CLIENT else "1"),
                 "stats": {"rx_packets": 1000, "tx_packets": 1000, "rx_errors": errors, "tx_errors": 0,
                           "rx_crc_errors": 0, "rx_dropped": 0, "tx_dropped": 0}}
 
     def ping(self, host: str, count: int) -> dict:
-        wired = host in (config.TESTER_IP, config.DUT_IP)
-        wifi = self._env.dut_connected and host in (HOTSPOT_IP, DUT_WIFI_IP)
+        wired = host in (config.SERVER_IP, config.CLIENT_IP)
+        wifi = self._env.client_connected and host in (HOTSPOT_IP, CLIENT_WIFI_IP)
         if not (wired or wifi):
             return {"sent": count, "received": 0, "loss_pct": 100.0, "rtt_avg_ms": None, "rtt_max_ms": None}
         lost = count // 5 if wired and self._fault("eth_loss") else 0
@@ -90,12 +90,12 @@ class MockOps(SystemOps):
 
     def iperf3_client(self, host: str, seconds: int, reverse: bool) -> dict:
         if self._fault("eth_errors"):
-            self._env.dut_errors += 250
+            self._env.client_errors += 250
         return {"mbit_per_s": 94.0 if self._fault("eth_slow") or self._fault("eth_100") else 941.0, "retransmits": 0}
 
     # --- wifi ---
     def _has_wifi(self) -> bool:
-        return not self._fault("no_wifi" if self._side == DUT else "tester_no_wifi")
+        return not self._fault("no_wifi" if self._side == CLIENT else "server_no_wifi")
 
     def wifi_info(self) -> dict:
         return {"ifaces": ["wlan0"] if self._has_wifi() else [], "rfkill": [], "regdom": "country BE (mock)"}
@@ -110,19 +110,19 @@ class MockOps(SystemOps):
     def wifi_connect(self, ssid: str, password: str) -> dict:
         if not any(n["ssid"] == ssid for n in self.wifi_scan()):
             raise OpsError(f"nmcli faalde: netwerk {ssid} niet gevonden")
-        self._env.dut_connected = True
-        return {"ip": DUT_WIFI_IP}
+        self._env.client_connected = True
+        return {"ip": CLIENT_WIFI_IP}
 
     def wifi_link(self) -> dict:
-        if not self._env.dut_connected:
+        if not self._env.client_connected:
             return {"connected": False, "ip": None}
         ap = self._env.hotspot
         return {"connected": True, "ssid": ap["ssid"], "freq_mhz": 5180 if ap["band"] == "a" else 2437,
                 "signal_dbm": -80.0 if self._fault("wifi_weak") else -48.0, "tx_mbit": 150.0, "rx_mbit": 150.0,
-                "ip": DUT_WIFI_IP}
+                "ip": CLIENT_WIFI_IP}
 
     def wifi_forget(self) -> None:
-        self._env.dut_connected = False
+        self._env.client_connected = False
 
     def wifi_hotspot_start(self, ssid: str, password: str, band: str, channel: int) -> dict:
         self._env.hotspot = {"ssid": ssid, "band": band, "channel": channel}
@@ -130,21 +130,21 @@ class MockOps(SystemOps):
 
     def wifi_hotspot_stop(self) -> None:
         self._env.hotspot = None
-        self._env.dut_connected = False
+        self._env.client_connected = False
 
     # --- bluetooth ---
     def bt_info(self) -> dict:
-        present = not self._fault("no_bt" if self._side == DUT else "tester_no_bt")
+        present = not self._fault("no_bt" if self._side == CLIENT else "server_no_bt")
         return {"present": present, "address": BT_ADDRESS[self._side] if present else None,
                 "powered": present, "rfkill": []}
 
     def bt_scan(self, seconds: int, forget_mac: str | None = None) -> list[dict]:
-        other = TESTER if self._side == DUT else DUT
+        other = SERVER if self._side == CLIENT else CLIENT
         if not self._env.discoverable[other]:
             return []
-        if self._side == DUT and self._fault("bt_dut_rx_dead"):
+        if self._side == CLIENT and self._fault("bt_client_rx_dead"):
             return []
-        if self._side == TESTER and self._fault("bt_dut_tx_dead"):
+        if self._side == SERVER and self._fault("bt_client_tx_dead"):
             return []
         return [{"address": BT_ADDRESS[other], "name": "mock", "rssi": -52}]
 

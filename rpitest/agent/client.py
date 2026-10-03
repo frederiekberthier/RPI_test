@@ -31,7 +31,7 @@ class RpcClient:
             with self._opener.open(request, timeout=_timeout or self._timeout) as response:
                 body = json.load(response)
         except (urllib.error.URLError, OSError, ValueError) as exc:
-            raise RpcError(f"DUT niet bereikbaar: {exc}") from exc
+            raise RpcError(f"TEST-CLIENT niet bereikbaar: {exc}") from exc
         if "error" in body:
             raise RpcError(body["error"])
         return body["result"]

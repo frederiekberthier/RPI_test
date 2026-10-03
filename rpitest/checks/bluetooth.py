@@ -1,4 +1,4 @@
-"""Bluetooth van de DUT: ontvangen (DUT ziet de testpi) en zenden (testpi ziet de DUT).
+"""Bluetooth van de TEST-CLIENT: ontvangen (TEST-CLIENT ziet de TEST-SERVER) en zenden (TEST-SERVER ziet de TEST-CLIENT).
 
 Bluetooth en wifi delen op de Pi dezelfde chip; deze check draait daarom na de wifi-check."""
 
@@ -14,27 +14,27 @@ _TOOL_ERRORS = (RpcError, OpsError)
 
 
 def run(ctx: Context) -> list[CheckResult]:
-    if ctx.tester_ops is None:
-        return [CheckResult("bluetooth", Status.SKIP, "overgeslagen: testpi heeft geen systeem-backend")]
+    if ctx.server_ops is None:
+        return [CheckResult("bluetooth", Status.SKIP, "overgeslagen: TEST-SERVER heeft geen systeem-backend")]
     try:
-        tester = ctx.tester_ops.bt_info()
-        if not tester["present"]:
-            return [CheckResult("bluetooth", Status.SKIP, "overgeslagen: de testpi heeft geen bluetooth-controller")]
-        dut = ctx.dut.call("bt_info")
+        server = ctx.server_ops.bt_info()
+        if not server["present"]:
+            return [CheckResult("bluetooth", Status.SKIP, "overgeslagen: de TEST-SERVER heeft geen bluetooth-controller")]
+        client = ctx.client.call("bt_info")
     except _TOOL_ERRORS as exc:
         return [CheckResult("bt.controller", Status.FAIL, f"bluetooth-gegevens niet op te halen: {exc}")]
 
-    controller = check_controller(dut)
+    controller = check_controller(client)
     if controller.status is Status.FAIL:
         return [controller,
                 CheckResult("bt.receive", Status.SKIP, "overgeslagen: geen werkende controller"),
                 CheckResult("bt.transmit", Status.SKIP, "overgeslagen: geen werkende controller")]
-    return [controller, check_receive(ctx, tester["address"]), check_transmit(ctx, dut["address"])]
+    return [controller, check_receive(ctx, server["address"]), check_transmit(ctx, client["address"])]
 
 
 def check_controller(info: dict) -> CheckResult:
     if not info["present"]:
-        return CheckResult("bt.controller", Status.FAIL, "geen bluetooth-controller op de DUT", info)
+        return CheckResult("bt.controller", Status.FAIL, "geen bluetooth-controller op de TEST-CLIENT", info)
     if not info["powered"]:
         return CheckResult("bt.controller", Status.FAIL, "bluetooth-controller kan niet ingeschakeld worden", info)
     return CheckResult("bt.controller", Status.PASS, f"controller {info['address']} actief", info)
@@ -49,34 +49,34 @@ def _verdict(name: str, found: list[dict], address: str, ok_text: str, fail_text
     return CheckResult(name, Status.PASS, f"{ok_text} (RSSI {rssi} dBm)" if rssi is not None else ok_text, details)
 
 
-def check_receive(ctx: Context, tester_address: str) -> CheckResult:
-    """De testpi is zichtbaar; de DUT moet hem zien."""
+def check_receive(ctx: Context, server_address: str) -> CheckResult:
+    """De TEST-SERVER is zichtbaar; de TEST-CLIENT moet hem zien."""
     secs = config.BT_SCAN_SECONDS
     try:
-        ctx.tester_ops.bt_discoverable(True)
+        ctx.server_ops.bt_discoverable(True)
         try:
-            found = ctx.dut.call("bt_scan", seconds=secs, forget_mac=tester_address, _timeout=secs + 25)
+            found = ctx.client.call("bt_scan", seconds=secs, forget_mac=server_address, _timeout=secs + 25)
         finally:
-            ctx.tester_ops.bt_discoverable(False)
+            ctx.server_ops.bt_discoverable(False)
     except _TOOL_ERRORS as exc:
         return CheckResult("bt.receive", Status.FAIL, f"scan mislukt: {exc}")
-    return _verdict("bt.receive", found, tester_address, "DUT ziet de testpi",
-                    "DUT ziet de testpi niet (ontvanger/antenne defect?)")
+    return _verdict("bt.receive", found, server_address, "TEST-CLIENT ziet de TEST-SERVER",
+                    "TEST-CLIENT ziet de TEST-SERVER niet (ontvanger/antenne defect?)")
 
 
-def check_transmit(ctx: Context, dut_address: str) -> CheckResult:
-    """De DUT is zichtbaar; de testpi moet hem zien."""
+def check_transmit(ctx: Context, client_address: str) -> CheckResult:
+    """De TEST-CLIENT is zichtbaar; de TEST-SERVER moet hem zien."""
     secs = config.BT_SCAN_SECONDS
     try:
-        ctx.dut.call("bt_discoverable", enabled=True, _timeout=15)
+        ctx.client.call("bt_discoverable", enabled=True, _timeout=15)
         try:
-            found = ctx.tester_ops.bt_scan(secs, dut_address)
+            found = ctx.server_ops.bt_scan(secs, client_address)
         finally:
             try:
-                ctx.dut.call("bt_discoverable", enabled=False, _timeout=15)
+                ctx.client.call("bt_discoverable", enabled=False, _timeout=15)
             except _TOOL_ERRORS:
                 pass
     except _TOOL_ERRORS as exc:
         return CheckResult("bt.transmit", Status.FAIL, f"scan mislukt: {exc}")
-    return _verdict("bt.transmit", found, dut_address, "testpi ziet de DUT",
-                    "testpi ziet de DUT niet (zender/antenne defect?)")
+    return _verdict("bt.transmit", found, client_address, "TEST-SERVER ziet de TEST-CLIENT",
+                    "TEST-SERVER ziet de TEST-CLIENT niet (zender/antenne defect?)")

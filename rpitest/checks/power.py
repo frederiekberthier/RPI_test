@@ -1,11 +1,11 @@
-"""Voeding, temperatuur en rekenstabiliteit van de DUT onder belasting.
+"""Voeding, temperatuur en rekenstabiliteit van de TEST-CLIENT onder belasting.
 
-De DUT draait ca. een minuut op alle kernen met een deterministische rekentaak en een
-geheugentest, terwijl de tester elke paar seconden temperatuur, klokfrequentie en de
+De TEST-CLIENT draait ca. een minuut op alle kernen met een deterministische rekentaak en een
+geheugentest, terwijl de TEST-SERVER elke paar seconden temperatuur, klokfrequentie en de
 throttled-vlaggen van de firmware uitleest.
 
 Onderspanning kan ook aan de testvoeding liggen. Gebruik een goede voeding en maak de zelftest
-met een bekend goede Pi; een DUT met een slechte stroomvoorziening valt daar dan door af."""
+met een bekend goede Pi; een TEST-CLIENT met een slechte stroomvoorziening valt daar dan door af."""
 
 from __future__ import annotations
 
@@ -26,8 +26,8 @@ SUPPLY_KEY = "EXT5V_V"  # ingangsspanning op de Pi 5 (vcgencmd pmic_read_adc)
 def run(ctx: Context) -> list[CheckResult]:
     seconds = config.STRESS_SECONDS
     try:
-        samples = [ctx.dut.call("power_sample")]
-        ctx.dut.call("stress_start", seconds=seconds, ram_mb=config.STRESS_RAM_MB)
+        samples = [ctx.client.call("power_sample")]
+        ctx.client.call("stress_start", seconds=seconds, ram_mb=config.STRESS_RAM_MB)
     except _TOOL_ERRORS as exc:
         return [CheckResult("power.sensors", Status.FAIL, f"metingen of belasting starten mislukt: {exc}")]
 
@@ -35,13 +35,13 @@ def run(ctx: Context) -> list[CheckResult]:
         deadline = time.monotonic() + seconds + 60
         while True:
             time.sleep(config.STRESS_POLL_S)
-            samples.append(ctx.dut.call("power_sample"))
-            if not ctx.dut.call("stress_poll")["running"]:
+            samples.append(ctx.client.call("power_sample"))
+            if not ctx.client.call("stress_poll")["running"]:
                 break
             if time.monotonic() > deadline:
                 raise OpsError("belastingstest eindigde niet op tijd")
-        result = ctx.dut.call("stress_result", _timeout=30)
-        samples.append(ctx.dut.call("power_sample"))
+        result = ctx.client.call("stress_result", _timeout=30)
+        samples.append(ctx.client.call("power_sample"))
     except _TOOL_ERRORS as exc:
         _stop(ctx)
         return [CheckResult("power.sensors", Status.FAIL, f"belastingstest mislukt: {exc}")]
@@ -50,7 +50,7 @@ def run(ctx: Context) -> list[CheckResult]:
 
 def _stop(ctx: Context) -> None:
     try:
-        ctx.dut.call("stress_stop")
+        ctx.client.call("stress_stop")
     except _TOOL_ERRORS:
         pass
 

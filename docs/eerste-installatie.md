@@ -9,17 +9,17 @@ Plan ongeveer een uur, de bedrading niet meegerekend.
 
 ## 0. Wat je nodig hebt
 
-- [ ] Testpi: Pi 5, voeding (5 V / 5 A), SD-kaart (16 GB of meer), HDMI-scherm, toetsenbord, internet (wifi)
-- [ ] Een **bekend goede** Pi 4 of 5 als eerste DUT, met voeding, en een SD-kaart (8 tot 16 GB) voor de DUT
+- [ ] TEST-SERVER: Pi 5, voeding (5 V / 5 A), SD-kaart (16 GB of meer), HDMI-scherm, toetsenbord, internet (wifi)
+- [ ] Een **bekend goede** Pi 4 of 5 als eerste TEST-CLIENT, met voeding, en een SD-kaart (8 tot 16 GB) voor de TEST-CLIENT
 - [ ] De breadboards met de 26 weerstandskabels en 3 GND-draden, gebouwd volgens [opstelling.md](opstelling.md)
 - [ ] UTP-kabel, en de USB-fixture met 4 voorbereide sticks (stap 4 van [opstelling.md](opstelling.md)); de USB-test mag je eerst overslaan
-- [ ] Een ventilator voor de DUT (temperatuurmetingen)
+- [ ] Een ventilator voor de TEST-CLIENT (temperatuurmetingen)
 - [ ] Een USB-stick om bestanden mee over te brengen (of `scp`)
 
-## 1. De testpi
+## 1. De TEST-SERVER
 
 1. Schrijf **Raspberry Pi OS (64-bit, Trixie, met bureaublad)** met Raspberry Pi Imager. In de instellingen: hostnaam
-   `rpitest-tester`, een gebruiker met wachtwoord, wifi met land `BE`, SSH aan.
+   `test-server`, een gebruiker met wachtwoord, wifi met land `BE`, SSH aan.
 2. Start de Pi met scherm en toetsenbord. Hij moet internet hebben via wifi.
 3. Haal de software binnen:
    ```
@@ -29,44 +29,44 @@ Plan ongeveer een uur, de bedrading niet meegerekend.
    ```
 4. **Voorcontrole:**
    ```
-   ./image/preflight.sh tester
+   ./image/preflight.sh server
    ```
    Je wilt `Geen fouten` zien. Waarschuwingen (`[let op]`) mogen, zoals "geen scherm op HDMI herkend" als je dat
    nog niet hebt aangesloten. Bij `[FOUT]` staat er wat je moet doen; los dat op en draai het opnieuw.
 5. **Installeren** (5 tot 10 minuten):
    ```
-   sudo ./install.sh tester
+   sudo ./install.sh server
    sudo reboot
    ```
-6. Na de herstart logt de Pi vanzelf in en toont het scherm **"Raspberry Pi tester"** met **"Wachten op de DUT…"**.
-7. **Natest** (via SSH of een terminal, de DUT hoeft nog niet aan te staan):
+6. Na de herstart logt de Pi vanzelf in en toont het scherm **"Raspberry Pi tester"** met **"Wachten op de TEST-CLIENT…"**.
+7. **Natest** (via SSH of een terminal, de TEST-CLIENT hoeft nog niet aan te staan):
    ```
-   cd RPI_test && sudo ./image/verify.sh tester
+   cd RPI_test && sudo ./image/verify.sh server
    ```
-   Alles moet `[ok]` zijn. Verwachte `[let op]`-regels nu: het vaste IP-adres staat er niet zonder kabel op, en de DUT
+   Alles moet `[ok]` zijn. Verwachte `[let op]`-regels nu: het vaste IP-adres staat er niet zonder kabel op, en de TEST-CLIENT
    antwoordt nog niet.
 
 Lukt de natest of het scherm niet, ga dan naar stap 5 en stuur de diagnose.
 
-## 2. De DUT-SD
+## 2. De TEST-CLIENT-SD
 
-1. Schrijf **Raspberry Pi OS Lite (Trixie)** naar een SD, hostnaam `rpitest-dut`, een gebruiker, wifi voor de installatie, SSH aan.
-2. Start de DUT (nog **zonder** testkabels) en haal de software binnen zoals bij de testpi.
+1. Schrijf **Raspberry Pi OS Lite (Trixie)** naar een SD, hostnaam `test-client`, een gebruiker, wifi voor de installatie, SSH aan.
+2. Start de TEST-CLIENT (nog **zonder** testkabels) en haal de software binnen zoals bij de TEST-SERVER.
 3. ```
-   ./image/preflight.sh dut
-   sudo ./install.sh dut
+   ./image/preflight.sh client
+   sudo ./install.sh client
    sudo reboot
-   sudo ./image/verify.sh dut        # na de herstart
+   sudo ./image/verify.sh client        # na de herstart
    ```
    Gebruik **nog geen** `--readonly`: dat doe je pas als alles werkt (stap 6), want daarna zijn wijzigingen weg.
-4. Haal de SD uit de DUT en bewaar hem als je tester-SD.
+4. Haal de SD uit de TEST-CLIENT en bewaar hem als je TEST-CLIENT-SD.
 
 ## 3. Bedrading en eerste verbinding
 
 1. Beide Pi's **uit**. Bouw en controleer de bedrading met de multimeter, volgens [opstelling.md](opstelling.md).
 2. Sluit de GPIO-kabels aan, de UTP-kabel tussen beide ethernetpoorten, en eventueel de USB-fixture.
-3. Steek de tester-SD in de DUT. Zet eerst de **testpi** aan, daarna de **DUT**, met een ventilator op de DUT.
-4. Na ca. een halve minuut staat op het scherm **"DUT verbonden"** met model en serienummer, en wordt de knop groen.
+3. Steek de TEST-CLIENT-SD in de TEST-CLIENT. Zet eerst de **TEST-SERVER** aan, daarna de **TEST-CLIENT**, met een ventilator op de TEST-CLIENT.
+4. Na ca. een halve minuut staat op het scherm **"TEST-CLIENT verbonden"** met model en serienummer, en wordt de knop groen.
    Blijft het "Wachten", kijk dan in [image.md](image.md) onder "Als iets niet werkt".
 
 ## 4. De eerste test, met een bekend goede Pi
@@ -108,6 +108,6 @@ USB-paden) en pas ik de code aan.
 Als alles werkt:
 
 1. Stel de drempels in `rpitest/config.py` bij op basis van wat de bekend goede Pi haalde (snelheden, signaalsterkte, temperatuur).
-2. Maak de DUT-SD alleen-lezen: `sudo ./install.sh dut --readonly`, herstart, en controleer met `verify.sh dut`
+2. Maak de TEST-CLIENT-SD alleen-lezen: `sudo ./install.sh client --readonly`, herstart, en controleer met `verify.sh client`
    (je ziet dan een `[let op]` dat de overlay actief is: zo hoort het).
-3. Kloon de SD ([image.md](image.md)) zodat je meerdere identieke tester-SD's hebt.
+3. Kloon de SD ([image.md](image.md)) zodat je meerdere identieke TEST-CLIENT-SD's hebt.
