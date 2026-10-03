@@ -51,6 +51,7 @@ class MockEnv:
         self.client_errors = 0
         self.stress_polls_left = 0
         self.stress_polls_done = 0
+        self.stress_active = False
 
     def ops(self, side: str) -> MockOps:
         return MockOps(self, side)
@@ -190,8 +191,10 @@ class MockOps(SystemOps):
 
     def power_sample(self) -> dict:
         env = self._env
-        loaded = env.stress_polls_done > 0
+        loaded = env.stress_active
         temp = 42.0 + (12.0 * min(env.stress_polls_done, 3) / 3 if loaded else 0.0)
+        if not loaded and env.stress_polls_done > 0:
+            temp = 50.0  # na afloop nog warm, maar de belasting is weg
         if loaded and self._fault("power_hot"):
             temp = 87.0
         elif loaded and self._fault("power_warm"):
@@ -207,7 +210,8 @@ class MockOps(SystemOps):
         volts = {"EXT5V_V": 4.6 if loaded and self._fault("power_undervolt") else 4.95}
         return {
             "temp_c": None if self._fault("power_no_sensor") else temp,
-            "freq_mhz": 1200.0 if throttle else 2400.0, "freq_max_mhz": 2400.0,
+            # in rust zakt de governor naar de rust-klok; alleen onder belasting haalt de Pi het maximum
+            "freq_mhz": 1200.0 if throttle else (2400.0 if loaded else 1500.0), "freq_max_mhz": 2400.0,
             "throttled": throttled, "volts": volts,
             "cores_online": 3 if self._fault("power_core_missing") else 4, "cores_present": 4,
         }
@@ -215,6 +219,7 @@ class MockOps(SystemOps):
     def stress_start(self, seconds: int, ram_mb: int) -> None:
         self._env.stress_polls_left = self.STRESS_POLLS
         self._env.stress_polls_done = 0
+        self._env.stress_active = True
 
     def stress_poll(self) -> dict:
         env = self._env
@@ -222,6 +227,8 @@ class MockOps(SystemOps):
         if running:
             env.stress_polls_left -= 1
             env.stress_polls_done += 1
+        else:
+            env.stress_active = False
         return {"running": running, "elapsed": float(env.stress_polls_done * 2)}
 
     def stress_result(self) -> dict:
@@ -232,3 +239,4 @@ class MockOps(SystemOps):
 
     def stress_stop(self) -> None:
         self._env.stress_polls_left = 0
+        self._env.stress_active = False

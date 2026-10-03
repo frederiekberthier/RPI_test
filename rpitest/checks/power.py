@@ -35,13 +35,17 @@ def run(ctx: Context) -> list[CheckResult]:
         deadline = time.monotonic() + seconds + 60
         while True:
             time.sleep(config.STRESS_POLL_S)
-            samples.append(ctx.client.call("power_sample"))
-            if not ctx.client.call("stress_poll")["running"]:
+            running = bool(ctx.client.call("stress_poll")["running"])
+            sample = ctx.client.call("power_sample")
+            # Alleen metingen terwijl de belasting liep zeggen iets over klok en spanning onder belasting;
+            # de laatste meting is na afloop genomen (de klok is dan al terug naar de rust-klok).
+            sample["loaded"] = running
+            samples.append(sample)
+            if not running:
                 break
             if time.monotonic() > deadline:
                 raise OpsError("belastingstest eindigde niet op tijd")
         result = ctx.client.call("stress_result", _timeout=30)
-        samples.append(ctx.client.call("power_sample"))
     except _TOOL_ERRORS as exc:
         _stop(ctx)
         return [CheckResult("power.sensors", Status.FAIL, f"belastingstest mislukt: {exc}")]
@@ -82,10 +86,15 @@ def _flag(samples: list[dict], name: str) -> bool:
     return any(decode_throttled(s.get("throttled")).get(name) for s in samples)
 
 
+def _loaded(samples: list[dict]) -> list[dict]:
+    """De metingen onder belasting (samples[0] is de meting in rust). Zonder markering telt een meting als belast."""
+    return [s for s in samples[1:] if s.get("loaded", True)]
+
+
 def check_supply(samples: list[dict]) -> CheckResult:
     volts = [s["volts"][SUPPLY_KEY] for s in samples if SUPPLY_KEY in (s.get("volts") or {})]
     details = {"min_input_volt": min(volts) if volts else None}
-    if _flag(samples[1:], "undervoltage_now"):
+    if _flag(_loaded(samples), "undervoltage_now"):
         return CheckResult("power.supply", Status.FAIL,
                            "onderspanning tijdens de belasting (defecte voedingsingang, of een te zwakke "
                            "testvoeding: controleer met een bekend goede Pi)", details)
@@ -104,7 +113,7 @@ def check_thermal(samples: list[dict]) -> CheckResult:
     if not temps:
         return CheckResult("power.thermal", Status.SKIP, "geen temperatuur gemeten")
     idle, peak = temps[0], max(temps)
-    loaded = samples[1:]
+    loaded = _loaded(samples)
     ratios = [s["freq_mhz"] / s["freq_max_mhz"] for s in loaded if s.get("freq_mhz") and s.get("freq_max_mhz")]
     lowest = min(ratios) if ratios else None
     details = {"idle_c": idle, "peak_c": peak, "lowest_freq_ratio": lowest}

@@ -251,3 +251,35 @@ def test_linuxops_stress_skips_ram_when_memory_is_unknown(tmp_path):
         assert ops.stress_result()["ram"] is None
     finally:
         ops.stress_stop()
+
+
+# ---------------------------------------------------------------- issue #3: rust-klok na afloop
+
+def loaded_sample(temp=60.0, freq=2400.0, **kw):
+    return {**sample(temp=temp, freq=freq, **kw), "loaded": True}
+
+
+def idle_sample(temp=55.0, freq=1500.0, **kw):
+    return {**sample(temp=temp, freq=freq, **kw), "loaded": False}
+
+
+def test_idle_clock_after_the_stress_run_is_not_judged_as_throttling():
+    # gezonde Pi: rust 1500 MHz (governor), onder belasting 2400, na afloop weer terug naar de rust-klok
+    samples = [sample(temp=48, freq=1500), loaded_sample(60), loaded_sample(66), loaded_sample(70), idle_sample(62)]
+    result = power.check_thermal(samples)
+    assert result.status is Status.PASS, result.summary
+    assert "100%" in result.summary  # alleen de metingen onder belasting tellen
+
+
+def test_a_real_clock_drop_under_load_is_still_reported():
+    samples = [sample(temp=48, freq=1500), loaded_sample(60), loaded_sample(70, freq=1000.0), idle_sample(62)]
+    assert power.check_thermal(samples).status is Status.WARN
+
+
+def test_run_marks_which_samples_were_taken_under_load(monkeypatch):
+    captured = {}
+    monkeypatch.setattr(power, "evaluate", lambda samples, result: captured.setdefault("samples", samples) and [])
+    power.run(make_ctx())
+    flags = [s.get("loaded") for s in captured["samples"]]
+    assert flags[0] is None  # de meting in rust vóór de belasting
+    assert flags[1:-1] and all(flags[1:-1]) and flags[-1] is False  # de laatste meting is na afloop genomen
