@@ -51,7 +51,7 @@ stappenplan staat ook in de [README](../README.md#installeren-op-een-pi-stappenp
 |---|---|---|
 | voorcontrole (`image/preflight.sh`) | ja | ja |
 | pakketten via `apt` (alleen de ontbrekende) | ja, plus `chromium` | ja |
-| software in `/opt/rpitest/venv` | ja | ja |
+| software in `/opt/rpitest/venv` (gebouwd met het Debian-pakket `python3-setuptools`, dus zonder PyPI) | ja | ja |
 | hostnaam `test-server` / `test-client` | ja | ja |
 | I2C, SPI en seriële console uit | ja | ja |
 | wifi-land (standaard `BE`) | ja | ja |

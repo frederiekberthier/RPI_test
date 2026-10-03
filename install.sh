@@ -52,7 +52,10 @@ need_root
 need_trixie
 
 # ---------------------------------------------------------------- wat hoort bij welke rol
-PACKAGES=(python3-venv python3-libgpiod iperf3 iw rfkill bluez network-manager dnsmasq-base curl)
+# python3-setuptools en python3-wheel: pip bouwt het pakket zonder isolatie (zie apply_app), zodat er geen internet
+# naar PyPI nodig is naast de Debian-bronnen
+PACKAGES=(python3-venv python3-setuptools python3-wheel python3-libgpiod iperf3 iw rfkill bluez network-manager
+          dnsmasq-base curl)
 OPTIONAL_PACKAGES=(libraspberrypi-bin)  # levert vcgencmd; zonder dit werkt de onderspanningsmeting niet
 KIOSK_USER="${KIOSK_USER:-${SUDO_USER:-}}"
 KIOSK_HOME="${KIOSK_HOME:-}"
@@ -158,7 +161,9 @@ apply_app() {
   # --system-site-packages: de module 'gpiod' komt uit het Debian-pakket python3-libgpiod
   # pip is het laatste dat de venv krijgt: ontbreekt het, dan is een eerdere poging halverwege mislukt (--clear begint opnieuw)
   [ -x "$VENV/bin/pip" ] || python3 -m venv --clear --system-site-packages "$VENV" || return 1
-  "$VENV/bin/pip" install --upgrade --force-reinstall --no-deps "$REPO_DIR" || return 1
+  # --no-build-isolation: setuptools komt uit het Debian-pakket (de venv ziet de systeem-pakketten), dus pip hoeft
+  # niets van PyPI te halen; het pakket zelf heeft geen afhankelijkheden (--no-deps).
+  "$VENV/bin/pip" install --upgrade --force-reinstall --no-deps --no-build-isolation "$REPO_DIR" || return 1
   "$VENV/bin/python" -c "import rpitest, gpiod" || { warn "rpitest of gpiod niet te importeren na de installatie"; return 1; }
   repo_revision > "$APP_DIR/REVISION"
   APP_CHANGED=1

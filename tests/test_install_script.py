@@ -147,7 +147,7 @@ class Sandbox:
             stub.chmod(0o755)  # zonder uitvoerrechten slaat bash de stub op Linux over en draait het echte commando
         (tmp_path / "os-release").write_text("VERSION_CODENAME=trixie\n")
         (tmp_path / "hosts").write_text("127.0.0.1\tlocalhost\n127.0.1.1\traspberrypi\n")
-        self.packages = ["python3-venv", "python3-libgpiod", "iperf3", "iw", "rfkill", "bluez", "network-manager",
+        self.packages = ["python3-venv", "python3-setuptools", "python3-wheel", "python3-libgpiod", "iperf3", "iw", "rfkill", "bluez", "network-manager",
                          "dnsmasq-base", "curl", "chromium", "libraspberrypi-bin"]
 
     def env(self, **extra):
@@ -504,3 +504,13 @@ def test_missing_required_packages_still_fail_the_check(box):
     box.install_packages(*[p for p in box.packages if p != "iperf3"])
     result = box.run("server", "--check")
     assert result.returncode == 3 and "ontbreken: iperf3" in result.clean
+
+
+# ---------------------------------------------------------------- issue #27: geen PyPI nodig voor de installatie
+
+def test_the_build_does_not_need_pypi(box):
+    box.run("server", "--skip-preflight")
+    pip_calls = [c for c in box.calls() if c.startswith("pip install")]
+    assert len(pip_calls) == 1 and "--no-build-isolation" in pip_calls[0] and "--no-deps" in pip_calls[0]
+    apt_call = next(c for c in box.calls() if c.startswith("apt-get install -y python3-venv"))
+    assert "python3-setuptools" in apt_call and "python3-wheel" in apt_call  # de bouwhulp komt uit Debian
