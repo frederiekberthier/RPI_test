@@ -26,7 +26,7 @@ Systeemfouten: `eth_100`, `eth_errors`, `eth_slow`, `eth_loss`, `no_wifi`, `wifi
 ## Op echte hardware
 ![Overzicht van de opstelling](docs/img/overzicht.svg)
 
-Zie [docs/opstelling.md](docs/opstelling.md) voor de bouw en [docs/image.md](docs/image.md) voor de tester-image en het scherm: onderdelen, bedrading van het breadboard,
+Zie [docs/opstelling.md](docs/opstelling.md) voor de bouw en [docs/image.md](docs/image.md) voor de tester-image en het scherm, en [docs/eerste-installatie.md](docs/eerste-installatie.md) voor het draaiboek van de eerste installatie: onderdelen, bedrading van het breadboard,
 netwerk, installatie (Raspberry Pi OS **Trixie**, libgpiod 2.x) en wat bij de eerste run nog
 bevestigd moet worden.
 

@@ -26,7 +26,8 @@ def read_unit(path):
 
 
 def test_expected_files_exist():
-    assert {p.name for p in SCRIPTS} == {"common.sh", "install-dut.sh", "install-tester.sh", "kiosk.sh"}
+    assert {p.name for p in SCRIPTS} == {"common.sh", "diagnose.sh", "install-dut.sh", "install-tester.sh",
+                                         "kiosk.sh", "preflight.sh", "verify.sh"}
     assert {p.name for p in UNITS} == {"rpitest-agent.service", "rpitest-ui.service"}
 
 
@@ -134,3 +135,77 @@ def test_ui_binds_locally_by_default():
     help_text = subprocess.run(["python", "-m", "rpitest.ui", "--help"], capture_output=True, text=True,
                                cwd=ROOT).stdout
     assert "enkel lokaal" in help_text
+
+
+# ---------------------------------------------------------------- voorcontrole, natest en diagnose
+
+READ_ONLY_SCRIPTS = ["preflight.sh", "verify.sh", "diagnose.sh"]
+FORBIDDEN = [
+    r"\brm\b", r"\bapt(?:-get)?\b", r"\bpip\b", r"systemctl\s+(?:restart|start|stop|enable|disable|daemon-reload|mask)",
+    r"nmcli\s+(?:\S+\s+)*(?:add|modify|delete|up|down)\b", r"raspi-config\s+nonint", r"\breboot\b", r"\bpoweroff\b",
+    r"\bdd\b", r"--show-secrets", r"\bmkfs", r"\bchmod\b", r"\bchown\b", r"hostnamectl", r"rfkill\s+(?:un)?block",
+    r">\s*/(?:etc|boot|sys|var/lib)", r"\binstall\s+-",
+]
+
+
+def code_lines(path):
+    """De regels zonder volledige commentaarregels."""
+    return [line for line in path.read_text(encoding="utf-8").splitlines() if not line.lstrip().startswith("#")]
+
+
+@pytest.mark.parametrize("name", READ_ONLY_SCRIPTS)
+def test_check_scripts_never_modify_the_system(name):
+    for line in code_lines(IMAGE / name):
+        for pattern in FORBIDDEN:
+            assert not re.search(pattern, line), f"{name}: verboden opdracht {pattern!r} in: {line.strip()}"
+
+
+def test_forbidden_patterns_actually_catch_what_they_should():
+    for bad in ["sudo rm -rf x", "apt-get install foo", "nmcli connection delete rpitest",
+                "nmcli con up rpitest", "systemctl restart rpitest-ui", "raspi-config nonint do_i2c 1",
+                "echo x > /etc/hosts", "dd if=/dev/zero of=/dev/sda"]:
+        assert any(re.search(p, bad) for p in FORBIDDEN), bad
+    for fine in ["nmcli -t -f NAME connection show", "nmcli dev wifi list --rescan yes",
+                 "systemctl is-active --quiet x", "journalctl -u rpitest-ui -n 80 --no-pager"]:
+        assert not any(re.search(p, fine) for p in FORBIDDEN), fine
+
+
+@pytest.mark.parametrize("name", ["install-tester.sh", "install-dut.sh"])
+def test_install_scripts_run_the_preflight_first(name):
+    text = (IMAGE / name).read_text(encoding="utf-8")
+    assert "preflight.sh" in text and "SKIP_PREFLIGHT" in text
+    assert text.index("preflight.sh") < text.index("install_packages")  # vóór er iets gewijzigd wordt
+
+
+def test_preflight_and_verify_know_the_roles():
+    for name in ("preflight.sh", "verify.sh"):
+        text = (IMAGE / name).read_text(encoding="utf-8")
+        assert 'need_role "$ROLE"' in text and "finish_checks" in text
+    assert "tester" in (IMAGE / "preflight.sh").read_text() and "labwc" in (IMAGE / "preflight.sh").read_text()
+
+
+def test_verify_matches_the_code_it_checks():
+    text = (IMAGE / "verify.sh").read_text(encoding="utf-8")
+    assert f"UI_PORT={ui_server.DEFAULT_PORT}" in text
+    from rpitest.gpio.real import HEADER_CHIP_LABELS
+    for label in HEADER_CHIP_LABELS:
+        assert label.removeprefix("pinctrl-") in text, label  # rp1, bcm2711, bcm2835
+    assert "rpitest-ui.service" in text and "rpitest-agent.service" in text
+    for unit in UNITS:
+        assert unit.name in text
+
+
+def test_diagnose_runs_the_same_commands_the_tests_parse():
+    text = (IMAGE / "diagnose.sh").read_text(encoding="utf-8")
+    assert "SSID,SIGNAL,FREQ,BSSID" in text  # de velden van wifi_scan
+    assert "config_value BT_SCAN_SECONDS" in text and 'bluetoothctl --timeout "$BT_SECONDS" scan on' in text  # één bron voor de duur
+    for command in ("vcgencmd get_throttled", "vcgencmd pmic_read_adc", "bluetoothctl show", "iw reg get",
+                    "ping -c 3 -i 0.2 -q -W 1", "lsblk", "ls -l /sys/block/", "dmesg", "--list-chips",
+                    "/sys/class/thermal/thermal_zone0/temp", "journalctl -u rpitest-ui"):
+        assert command in text, command
+
+
+def test_diagnose_never_prints_secrets():
+    text = (IMAGE / "diagnose.sh").read_text(encoding="utf-8")
+    assert "--show-secrets" not in text and "WIFI_PASSWORD" not in text and "password" not in text.lower().replace(
+        "geen wachtwoorden", "")

@@ -15,6 +15,10 @@ kale Raspberry Pi OS; daarna kun je de SD klonen.
 De knop is pas actief als de DUT bereikbaar is. **Afbreken** stopt na het onderdeel dat bezig is;
 het rapport is dan **Onvolledig**.
 
+**Voor het eerst op echte hardware?** Volg dan het draaiboek in [eerste-installatie.md](eerste-installatie.md).
+De scripts `image/preflight.sh` (voorcontrole), `image/verify.sh` (natest) en `image/diagnose.sh` (verzamelt de ruwe
+uitvoer van alle tools om terug te sturen) horen daarbij; ze wijzigen niets.
+
 ## Wat je nodig hebt
 
 - Testpi: Pi 5 met scherm op HDMI, toetsenbord of USB-knop. Raspberry Pi OS **Trixie, 64-bit, mét bureaublad**.

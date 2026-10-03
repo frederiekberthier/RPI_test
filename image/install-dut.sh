@@ -17,6 +17,9 @@ READONLY=0
 
 need_root
 need_trixie
+if [ "${SKIP_PREFLIGHT:-0}" != 1 ]; then
+  "$IMAGE_DIR/preflight.sh" dut || die "de voorcontrole vond fouten; los ze op (of sla over met SKIP_PREFLIGHT=1)"
+fi
 
 install_packages
 install_app

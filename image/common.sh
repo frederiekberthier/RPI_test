@@ -14,6 +14,39 @@ ETH_IFACE="${ETH_IFACE:-eth0}"
 WIFI_COUNTRY="${WIFI_COUNTRY:-BE}"
 NM_PROFILE=rpitest
 
+# --- controles (preflight.sh en verify.sh): tellen fouten en waarschuwingen, wijzigen niets ---
+CHECKS_FAILED=0
+CHECKS_WARNED=0
+pass() { printf '  \033[1;32m[ok]\033[0m      %s\n' "$*"; }
+fail() { printf '  \033[1;31m[FOUT]\033[0m    %s\n' "$*"; CHECKS_FAILED=$((CHECKS_FAILED + 1)); }
+note() { printf '  \033[1;33m[let op]\033[0m  %s\n' "$*"; CHECKS_WARNED=$((CHECKS_WARNED + 1)); }
+
+finish_checks() {
+  echo
+  if [ "$CHECKS_FAILED" -gt 0 ]; then
+    printf '%s fout(en), %s waarschuwing(en): los de fouten eerst op.\n' "$CHECKS_FAILED" "$CHECKS_WARNED"
+    return 1
+  fi
+  printf 'Geen fouten, %s waarschuwing(en).\n' "$CHECKS_WARNED"
+}
+
+need_role() {
+  case "${1:-}" in
+    tester|dut) ;;
+    *) die "gebruik: $0 tester|dut" ;;
+  esac
+}
+
+# Is dit commando beschikbaar? Geeft [ok] of een melding terug; $3 = fail of note.
+require_command() {
+  local cmd="$1" hint="$2" severity="${3:-fail}"
+  if command -v "$cmd" >/dev/null 2>&1; then
+    pass "$cmd aanwezig"
+  else
+    "$severity" "$cmd ontbreekt ($hint)"
+  fi
+}
+
 need_root() {
   [ "$(id -u)" -eq 0 ] || die "start dit script met sudo"
 }
