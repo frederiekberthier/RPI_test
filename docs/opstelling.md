@@ -88,6 +88,8 @@ Op de DUT-image hetzelfde met `192.168.77.2/24`. De adressen staan in `rpitest/c
 
 ## Software
 
+**Automatisch:** de scripts in `image/` doen dit alles voor je en richten ook het scherm en de diensten in; zie [image.md](image.md). Hieronder staat de handmatige route.
+
 Basis: **Raspberry Pi OS Lite (Trixie, 64-bit)**, voor beide Pi's. Bookworm werkt niet, want die levert libgpiod 1.x.
 
 ```

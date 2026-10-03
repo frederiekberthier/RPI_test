@@ -12,6 +12,7 @@ Test library om RPI hardwarematig te testen
 pip install -e .[dev]
 python -m pytest
 python -m rpitest --mock                                   # gezonde gesimuleerde Pi
+python -m rpitest.ui --mock                                # het scherm van de testpi, op http://127.0.0.1:8080
 python -m rpitest --mock --fault stuck_low:D:5 --fault bridge:D:10:11 --fault open:7
 python -m rpitest --mock --fault eth_100 --fault wifi_5g_dead --fault bt_dut_tx_dead
 ```
@@ -25,7 +26,7 @@ Systeemfouten: `eth_100`, `eth_errors`, `eth_slow`, `eth_loss`, `no_wifi`, `wifi
 ## Op echte hardware
 ![Overzicht van de opstelling](docs/img/overzicht.svg)
 
-Zie [docs/opstelling.md](docs/opstelling.md): onderdelen, bedrading van het breadboard,
+Zie [docs/opstelling.md](docs/opstelling.md) voor de bouw en [docs/image.md](docs/image.md) voor de tester-image en het scherm: onderdelen, bedrading van het breadboard,
 netwerk, installatie (Raspberry Pi OS **Trixie**, libgpiod 2.x) en wat bij de eerste run nog
 bevestigd moet worden.
 
@@ -33,4 +34,5 @@ bevestigd moet worden.
 Klaar: skelet, agent (JSON-RPC over HTTP), mock met foutinjectie, GPIO-checks, JSON/HTML-rapport,
 echte GPIO-backend (libgpiod 2.x, enkel getest met een nep-`gpiod`), bedradingshandleiding,
 netwerk-, wifi-, bluetooth-, USB- en voeding/temperatuurchecks (alleen getest met simulatie en nagebootste tooluitvoer).
-Nog te doen: alles op echte Pi's bevestigen, tester-image, scherm/kiosk.
+Scherm met startknop en live resultaten (`rpitest.ui`), installatiescripts voor tester en DUT (`image/`).
+Nog te doen: alles op echte Pi's bevestigen (ook de installatiescripts).

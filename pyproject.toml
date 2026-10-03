@@ -21,3 +21,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["rpitest*"]
+
+[tool.setuptools.package-data]
+"rpitest.ui" = ["static/*"]

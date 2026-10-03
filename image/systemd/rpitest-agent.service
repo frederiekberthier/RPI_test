@@ -1,0 +1,17 @@
+[Unit]
+Description=Raspberry Pi tester: agent op de te testen Pi
+After=NetworkManager.service network-online.target bluetooth.service
+Wants=network-online.target bluetooth.service
+
+[Service]
+Type=simple
+# Draait als root: wifi (nmcli), bluetooth, dmesg en de GPIO-chip vragen die rechten.
+Environment=PYTHONUNBUFFERED=1
+WorkingDirectory=/var/lib/rpitest
+# Luistert op het vaste testadres; bestaat dat nog niet bij het opstarten, dan probeert systemd het opnieuw.
+ExecStart=/opt/rpitest/venv/bin/python -m rpitest.agent
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
