@@ -104,3 +104,25 @@ def test_both_command_lines_report_a_bad_fixture_and_exit_2(main, extra, capsys,
     assert main(["--mock", "--usb-fixture", str(path), "--out", str(tmp_path), *extra]) == 2
     err = capsys.readouterr().err
     assert err.startswith("Fout: ") and "min_speed_mbit" in err and "Traceback" not in err
+
+
+# ---------------------------------------------------------------- het scherm start altijd met een schoon afsluitvlag
+
+def test_the_screen_clears_an_old_exit_flag_at_startup(tmp_path, monkeypatch):
+    from rpitest.ui import server as ui_server
+    reports = tmp_path / "var" / "reports"
+    reports.mkdir(parents=True)
+    flag = ui_server.exit_flag_path(reports)
+    flag.write_text("1")
+
+    class Stop:
+        def serve_forever(self):
+            assert not flag.exists()  # al weg vóórdat de dienst antwoorden geeft
+            raise KeyboardInterrupt
+
+        def server_close(self):
+            pass
+
+    monkeypatch.setattr(ui_cli, "make_server", lambda *a, **k: Stop())
+    assert ui_cli.main(["--mock", "--out", str(reports), "--port", "0"]) == 0
+    assert not flag.exists()

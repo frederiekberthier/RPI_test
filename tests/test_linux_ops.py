@@ -284,3 +284,16 @@ def test_a_killed_iperf3_server_is_reaped_and_its_pipe_closed(tmp_path):
     proc.wait = slow_wait
     ops.iperf3_server_stop()
     assert proc.poll() is not None and proc.stderr.closed
+
+
+# ---------------------------------------------------------------- uitschakelen
+
+def test_power_off_runs_systemctl_poweroff_after_a_short_delay(tmp_path, monkeypatch):
+    from rpitest.system import linux
+    scheduled = []
+    monkeypatch.setattr(linux, "_after", lambda delay, action: scheduled.append((delay, action)))
+    shell = FakeShell([(("systemctl",), ShellResult(0))])
+    LinuxOps(shell, tmp_path).power_off()
+    assert shell.calls == [] and scheduled and scheduled[0][0] >= 1  # het antwoord moet eerst nog weg kunnen
+    scheduled[0][1]()
+    assert shell.calls == [["systemctl", "poweroff"]]

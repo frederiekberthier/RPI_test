@@ -49,7 +49,23 @@ footer{display:flex;gap:1.4rem;justify-content:space-between;align-items:center;
 #history{display:flex;gap:1.2rem;flex-wrap:wrap}
 #history a{color:var(--muted);text-decoration:none}
 #history .badge{font-size:.65rem;min-width:3.4rem;padding:0 .4rem}
-#shutdown{background:transparent;color:var(--muted);border:1px solid var(--line);padding:.3rem .8rem;font-size:.75rem}
+#header-right{display:flex;gap:1.2rem;align-items:center}
+#exit-btn{background:transparent;color:var(--text);border:1px solid var(--line);padding:.35rem 1rem;font-size:.9rem}
+#exit-btn:disabled{color:var(--muted);cursor:not-allowed;opacity:.6}
+#exit-dialog,#closing{position:fixed;inset:0;background:rgba(5,9,13,.85);display:flex;align-items:center;justify-content:center;z-index:10}
+#exit-card{background:var(--panel);border:1px solid var(--line);border-radius:1rem;padding:1.6rem 1.8rem;width:min(34rem,92vw);
+  display:flex;flex-direction:column;gap:1rem}
+#exit-step1,#exit-step2{display:flex;flex-direction:column;gap:1rem}
+#exit-card h2{margin:0;font-size:1.6rem}
+#exit-card p{margin:0;color:var(--muted)}
+#exit-card .choice{padding:1.1rem 1rem;background:#223041;font-weight:700;text-align:left}
+#exit-card .choice small{display:block;font-weight:400;color:var(--muted);font-size:.8rem}
+#exit-card .choice.danger{background:var(--fail);color:#190503}
+#exit-card .choice.danger small{color:#3b0d09}
+#exit-card .cancel{background:transparent;border:1px solid var(--line);color:var(--muted);padding:.7rem 1rem}
+#exit-error{color:var(--fail);font-size:.9rem;min-height:1.2em}
+#closing{flex-direction:column;gap:.6rem;text-align:center;background:var(--bg)}
+#closing h2{margin:0;font-size:2rem}#closing p{margin:0;color:var(--muted)}
 #conn{background:var(--fail);color:#fff;text-align:center;padding:.4rem}
 .hidden{display:none!important}
 @media (max-width:900px){main{grid-template-columns:1fr}}
@@ -57,7 +73,8 @@ footer{display:flex;gap:1.4rem;justify-content:space-between;align-items:center;
 </head>
 <body>
 <div id="conn" class="hidden">Verbinding met de TEST-SERVER verloren; er wordt opnieuw geprobeerd&hellip;</div>
-<header><h1>Raspberry Pi tester</h1><span id="clock"></span></header>
+<header><h1>Raspberry Pi tester</h1>
+  <div id="header-right"><span id="clock"></span><button id="exit-btn" class="hidden">Afsluiten</button></div></header>
 <main>
   <section id="left">
     <div class="card" id="client"><div class="dot" id="client-dot"></div>
@@ -82,7 +99,27 @@ footer{display:flex;gap:1.4rem;justify-content:space-between;align-items:center;
     <div id="results-wrap" class="hidden"><table><tbody id="results"></tbody></table></div>
   </section>
 </main>
-<footer><div id="history"></div><button id="shutdown" class="hidden">TEST-SERVER uitschakelen</button></footer>
+<footer><div id="history"></div></footer>
+<div id="exit-dialog" class="hidden" role="dialog" aria-modal="true" aria-labelledby="exit-title">
+  <div id="exit-card">
+    <div id="exit-step1">
+      <h2 id="exit-title">Afsluiten</h2>
+      <p>Wat wil je afsluiten?</p>
+      <button class="choice" id="exit-app">Alleen de applicatie sluiten<small>De browser sluit en de dienst stopt. De Pi blijft aan (voor beheer met toetsenbord).</small></button>
+      <button class="choice danger" id="exit-poweroff">De TEST-SERVER uitschakelen<small>Sluit de applicatie en zet de Pi uit.</small></button>
+      <button class="cancel" id="exit-cancel">Annuleren</button>
+    </div>
+    <div id="exit-step2" class="hidden">
+      <h2>De TEST-CLIENT ook uitschakelen?</h2>
+      <p id="exit-client-question"></p>
+      <button class="choice danger" id="exit-client-yes">Ja, de TEST-CLIENT ook uitschakelen<small>Veilig om de TEST-CLIENT daarna los te koppelen.</small></button>
+      <button class="choice" id="exit-client-no">Nee, de TEST-CLIENT blijft aan</button>
+      <button class="cancel" id="exit-back">Terug</button>
+    </div>
+    <div id="exit-error"></div>
+  </div>
+</div>
+<div id="closing" class="hidden"><h2 id="closing-title"></h2><p id="closing-text"></p></div>
 <noscript>Deze pagina heeft JavaScript nodig.</noscript>
 <script>
 "use strict";
@@ -95,6 +132,8 @@ const OVERALL = {
 };
 const GROUP_STATUS = {wachten: "wacht", bezig: "bezig…", klaar: "klaar", overgeslagen: "overgeslagen", fout: "fout", waarschuwing: "waarschuwing"};
 let state = null, pending = false;
+let closing = false;   // de server wordt afgesloten: niet meer vernieuwen of foutmeldingen tonen
+let exitMode = null;
 let notice = null;   // melding van de server of een mislukte opdracht; blijft even staan boven de vaste hinttekst
 const NOTICE_MS = 4000;
 
@@ -129,7 +168,7 @@ async function post(path, body) {
 }
 
 function primaryAction() {
-  if (!state || $("primary").disabled) return;
+  if (!state || $("primary").disabled || exitDialogOpen() || closing) return;
   post(state.phase === "done" ? "/api/reset" : "/api/start");
 }
 
@@ -212,7 +251,9 @@ function renderFooter(s) {
     a.append(el("span", "badge " + h.overall, h.overall), " " + h.started.replace("T", " ").slice(0, 16) + " · " + h.serial);
     return a;
   }));
-  $("shutdown").classList.toggle("hidden", !s.shutdown_allowed);
+  $("exit-btn").classList.toggle("hidden", !s.shutdown_allowed);
+  $("exit-btn").disabled = s.phase === "running";
+  $("exit-btn").title = s.phase === "running" ? "Breek de test eerst af" : "";
 }
 
 function render(s) { renderClient(s); renderButtons(s); renderResults(s); renderFooter(s); }
@@ -225,16 +266,77 @@ async function refresh() {
 }
 
 async function loop() {
-  try { await refresh(); } catch (e) { $("conn").classList.remove("hidden"); }
+  if (closing) return;
+  try { await refresh(); } catch (e) { if (!closing) $("conn").classList.remove("hidden"); }
   setTimeout(loop, 1000);
 }
 
+// ---- afsluiten: eerst kiezen wat (applicatie of hele Pi), dan of de TEST-CLIENT ook mee moet
+function exitDialogOpen() { return !$("exit-dialog").classList.contains("hidden"); }
+
+function showExitStep(n) {
+  $("exit-step1").classList.toggle("hidden", n !== 1);
+  $("exit-step2").classList.toggle("hidden", n !== 2);
+}
+
+function openExit() {
+  if (!state || !state.shutdown_allowed || state.phase === "running") return;
+  exitMode = null;
+  $("exit-error").textContent = "";
+  showExitStep(1);
+  $("exit-dialog").classList.remove("hidden");
+}
+
+function closeExit() { $("exit-dialog").classList.add("hidden"); }
+
+function chooseExit(mode) {
+  exitMode = mode;
+  $("exit-error").textContent = "";
+  if (state && state.client && state.client.ready) {
+    $("exit-client-question").textContent = (mode === "app" ? "De applicatie wordt gesloten. " : "De TEST-SERVER wordt uitgeschakeld. ")
+      + "De TEST-CLIENT is nog verbonden: moet die ook worden uitgeschakeld?";
+    showExitStep(2);
+  } else {
+    sendExit(false);   // geen TEST-CLIENT verbonden: er valt niets te kiezen
+  }
+}
+
+async function sendExit(withClient) {
+  const mode = exitMode;
+  try {
+    const r = await fetch("/api/shutdown", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({confirm: true, mode: mode, client: withClient})});
+    const data = await r.json();
+    if (!data.ok) {
+      showExitStep(1);
+      $("exit-error").textContent = data.message;
+      return;
+    }
+    closing = true;
+    closeExit();
+    $("closing-title").textContent = mode === "app" ? "De applicatie wordt gesloten" : "De TEST-SERVER wordt uitgeschakeld";
+    $("closing-text").textContent = (mode === "app" ? "De Pi blijft aan." : "Haal de stroom pas weg als het scherm zwart is.")
+      + (withClient ? " De TEST-CLIENT wordt ook uitgeschakeld." : "");
+    $("closing").classList.remove("hidden");
+  } catch (e) {
+    showExitStep(1);
+    $("exit-error").textContent = "Kon de opdracht niet versturen.";
+  }
+}
+
 $("primary").addEventListener("click", primaryAction);
-$("shutdown").addEventListener("click", () => {
-  if (confirm("De TEST-SERVER uitschakelen?")) post("/api/shutdown", {confirm: true});
-});
+$("exit-btn").addEventListener("click", openExit);
+$("exit-cancel").addEventListener("click", closeExit);
+$("exit-app").addEventListener("click", () => chooseExit("app"));
+$("exit-poweroff").addEventListener("click", () => chooseExit("poweroff"));
+$("exit-client-yes").addEventListener("click", () => sendExit(true));
+$("exit-client-no").addEventListener("click", () => sendExit(false));
+$("exit-back").addEventListener("click", () => showExitStep(1));
 // Enter of spatie doet hetzelfde als de grote knop; zo werkt ook een USB-knop die een toets stuurt.
+// Zolang het afsluitvenster open staat starten die toetsen geen test: Enter bedient dan de knop met de focus.
 document.addEventListener("keydown", e => {
+  if (closing) { e.preventDefault(); return; }
+  if (exitDialogOpen()) { if (e.key === "Escape") closeExit(); return; }
   if ((e.key === "Enter" || e.key === " ") && !e.repeat) { e.preventDefault(); primaryAction(); }
 });
 setInterval(() => { $("clock").textContent = new Date().toLocaleString("nl-BE", {dateStyle: "medium", timeStyle: "short"}); }, 1000);

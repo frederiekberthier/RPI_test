@@ -110,3 +110,7 @@ class SystemOps(ABC):
 
     @abstractmethod
     def stress_stop(self) -> None: ...
+
+    @abstractmethod
+    def power_off(self) -> None:
+        """Schakel deze Pi uit. Keert terug voordat de uitschakeling begint, zodat een antwoord nog aankomt."""

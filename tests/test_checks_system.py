@@ -205,3 +205,41 @@ def test_a_hotspot_ping_failure_on_the_test_server_skips_the_band(monkeypatch):
     _broken_server(monkeypatch, ctx, "ping")
     results = {r.name: r for r in run_all(ctx).results}
     assert results["wifi.2.4GHz"].status is Status.SKIP and results["wifi.5GHz"].status is Status.SKIP
+
+
+# ---------------------------------------------------------------- de TEST-CLIENT uitschakelen
+
+def test_the_agent_can_power_off_the_client_and_only_the_client():
+    ctx, env = make_ctx()
+    assert not any(env.powered_off.values())
+    ctx.client.call("power_off")
+    assert env.powered_off == {sysmock.CLIENT: True, sysmock.SERVER: False}
+
+
+def test_an_agent_without_a_system_backend_refuses_power_off():
+    from rpitest.agent.client import RpcError
+    wiring = MockWiring()
+    client = LocalClient(Agent(wiring.port(GPIO_CLIENT), lambda: INFO))
+    with pytest.raises(RpcError, match="systeem-backend"):
+        client.call("power_off")
+
+
+def test_real_client_power_off_calls_the_agent_over_http():
+    from rpitest import factory
+    env = sysmock.MockEnv()
+    wiring = MockWiring()
+    server = make_server(Agent(wiring.port(GPIO_CLIENT), lambda: INFO, env.ops(sysmock.CLIENT)), "127.0.0.1", 0)
+    serve_in_thread(server)
+    try:
+        factory.real_client_power_off(f"http://127.0.0.1:{server.server_address[1]}")()
+        assert env.powered_off[sysmock.CLIENT] is True
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_real_client_power_off_reports_an_unreachable_client():
+    from rpitest import factory
+    from rpitest.agent.client import RpcError
+    with pytest.raises(RpcError, match="niet bereikbaar"):
+        factory.real_client_power_off("http://127.0.0.1:1")()

@@ -138,3 +138,34 @@ def test_diagnose_collects_output_but_never_asks_for_secrets(box):
     asked = [c for c in box.calls() if c.startswith(("nmcli", "bluetoothctl"))]
     assert asked and not [c for c in asked if "secret" in c or "password" in c.lower()]
     assert [c for c in box.mutations() if c != "rfkill list"] == []  # de diagnose wijzigt niets (rfkill list leest alleen)
+
+
+# ---------------------------------------------------------------- kiosk.sh: 'Afsluiten > Applicatie sluiten'
+
+def run_kiosk(box, chromium_body, **env):
+    box.add_stub("chromium", 'echo "chromium $*" >> "$STATE/calls"\n' + chromium_body)
+    box.add_stub("sleep", "exit 0")
+    flag = box.root / "kiosk-exit"
+    result = box.run_script("image/kiosk.sh", RPITEST_EXIT_FLAG=flag.as_posix(), **env)
+    return result, flag
+
+
+def test_the_kiosk_browser_is_restarted_when_it_stops_on_its_own(box):
+    # de stub zet het vlag pas bij de derde start: tot dan hoort de browser telkens herstart te worden
+    result, _ = run_kiosk(box, 'n=$(grep -c "^chromium" "$STATE/calls"); [ "$n" -ge 3 ] && touch "$RPITEST_EXIT_FLAG"; exit 0')
+    assert result.returncode == 0, result.clean
+    assert len([c for c in box.calls() if c.startswith("chromium")]) == 3  # na elke stop opnieuw gestart
+
+
+def test_the_kiosk_stays_closed_once_the_exit_flag_exists(box):
+    result, flag = run_kiosk(box, 'touch "$RPITEST_EXIT_FLAG"; exit 0')
+    assert result.returncode == 0 and flag.exists()
+    assert len([c for c in box.calls() if c.startswith("chromium")]) == 1  # één keer gestart, daarna niet herstart
+
+
+def test_the_kiosk_does_not_even_wait_for_the_service_when_it_was_closed_on_purpose(box):
+    box.add_stub("curl", "exit 22")  # de webdienst is al gestopt
+    (box.root / "kiosk-exit").write_text("1")
+    result, _ = run_kiosk(box, "exit 0")
+    assert result.returncode == 0
+    assert not [c for c in box.calls() if c.startswith("chromium")]

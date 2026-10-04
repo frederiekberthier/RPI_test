@@ -10,6 +10,7 @@ import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -26,6 +27,13 @@ class ShellResult:
     returncode: int
     stdout: str = ""
     stderr: str = ""
+
+
+def _after(delay: float, action) -> None:
+    """Voer `action` na `delay` seconden uit op een achtergronddraad (tests vervangen dit)."""
+    timer = threading.Timer(delay, action)
+    timer.daemon = True
+    timer.start()
 
 
 def tool_env() -> dict[str, str]:
@@ -428,6 +436,10 @@ class LinuxOps(SystemOps):
             if proc.poll() is None:
                 proc.kill()
             proc.communicate()
+
+    def power_off(self) -> None:
+        # even wachten: het antwoord op de aanroep moet nog de kabel op voor het netwerk verdwijnt
+        _after(1.5, lambda: self._sh.run(["systemctl", "poweroff"], 60))
 
     def close(self) -> None:
         """Ruim alles op wat deze instantie gestart heeft (aanroepen bij afsluiten)."""

@@ -54,6 +54,7 @@ class MockEnv:
         self.stress_polls_left = 0
         self.stress_polls_done = 0
         self.stress_active = False
+        self.powered_off = {SERVER: False, CLIENT: False}
 
     def ops(self, side: str) -> MockOps:
         return MockOps(self, side)
@@ -248,3 +249,6 @@ class MockOps(SystemOps):
     def stress_stop(self) -> None:
         self._env.stress_polls_left = 0
         self._env.stress_active = False
+
+    def power_off(self) -> None:
+        self._env.powered_off[self._side] = True

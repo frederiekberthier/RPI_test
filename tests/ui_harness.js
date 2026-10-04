@@ -32,16 +32,27 @@ function makeEl(id) {
   return e;
 }
 const getEl = id => (elements[id] = elements[id] || makeEl(id));
+// de klassen die de pagina zelf meegeeft (bv. "hidden") staan er al voordat de scripts draaien
+for (const tag of html.match(/<[a-z0-9]+\s[^>]*>/g) || []) {
+  const id = /\sid="([^"]+)"/.exec(tag), cls = /\sclass="([^"]*)"/.exec(tag);
+  if (id && cls) cls[1].split(/\s+/).filter(Boolean).forEach(c => getEl(id[1])._classes.add(c));
+}
 
 let state = {};
 const postResponses = {};
 const fetchLog = [];
+const bodies = [];
+const docListeners = {};
 let now = 1_000_000;
 
 const sandbox = {
-  document: { getElementById: getEl, createElement: tag => makeEl(tag), addEventListener() {} },
+  document: {
+    getElementById: getEl, createElement: tag => makeEl(tag),
+    addEventListener(type, fn) { (docListeners[type] = docListeners[type] || []).push(fn); },
+  },
   fetch: async (url, opts = {}) => {
     fetchLog.push([url, opts.method || "GET"]);
+    if (opts.method === "POST") bodies.push([url, JSON.parse(opts.body || "{}")]);
     if (opts.method === "POST") return { json: async () => postResponses[url] || { ok: true, message: "" } };
     return { json: async () => state };
   },
@@ -55,6 +66,8 @@ const sandbox = {
   __setNow: ms => { now = ms; },
   __el: getEl,
   __fetchLog: fetchLog,
+  __bodies: bodies,
+  __fire: (type, ev) => (docListeners[type] || []).forEach(fn => fn({ repeat: false, preventDefault() {}, ...ev })),
 };
 
 (async () => {

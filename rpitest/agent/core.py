@@ -73,6 +73,7 @@ class Agent:
             "stress_poll": self.stress_poll,
             "stress_result": self.stress_result,
             "stress_stop": self.stress_stop,
+            "power_off": self.power_off,
         }
 
     def dispatch(self, method: str, params: dict):
@@ -181,3 +182,6 @@ class Agent:
 
     def stress_stop(self) -> None:
         self.ops.stress_stop()
+
+    def power_off(self) -> None:
+        self.ops.power_off()

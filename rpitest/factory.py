@@ -118,6 +118,12 @@ def mock_probe() -> dict | None:
     return dict(MOCK_CLIENT_INFO)
 
 
+def real_client_power_off(client_url: str) -> Callable[[], None]:
+    """Vraagt de agent op de TEST-CLIENT om de Pi uit te schakelen; gooit RpcError als dat niet lukt."""
+    client = RpcClient(client_url, timeout=10)
+    return lambda: client.call("power_off")
+
+
 def real_probe(client_url: str) -> Callable[[], dict | None]:
     """Snelle controle of de agent op de TEST-CLIENT bereikbaar is; geeft de gegevens van de TEST-CLIENT of None."""
     client = RpcClient(client_url, timeout=1.5)

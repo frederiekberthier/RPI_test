@@ -93,18 +93,29 @@ Schrijf `client-master.img` met Imager of `dd` naar elke nieuwe SD.
 | Extra opties voor het scherm | `/etc/rpitest/ui.env`, bv. `RPITEST_UI_ARGS=--usb-fixture /etc/rpitest/usb_fixture.json` |
 | Logboek | `journalctl -u rpitest-ui` of `journalctl -u rpitest-agent` |
 
+**Afsluiten:** de kioskbrowser heeft geen sluitknop. Rechtsboven staat de knop **Afsluiten** (tijdens een test
+uitgeschakeld). Die vraagt eerst wat je wilt afsluiten:
+- **Alleen de applicatie sluiten**: de browser sluit en blijft dicht, en `rpitest-ui` stopt. De Pi blijft aan en je komt op het lege
+  bureaublad van labwc, bijvoorbeeld om met een toetsenbord iets te beheren. Opnieuw beginnen kan door de Pi te herstarten (of met
+  `sudo systemctl start rpitest-ui` en daarna `/opt/rpitest/kiosk.sh`).
+- **De TEST-SERVER uitschakelen**: sluit de applicatie en zet de Pi uit (`systemctl poweroff`).
+
+Is er een TEST-CLIENT verbonden, dan vraagt het scherm daarna of die ook uitgeschakeld moet worden. Bij *ja* schakelt de TEST-SERVER
+eerst de TEST-CLIENT uit (via de agent); lukt dat niet, dan wordt er niets afgesloten en zie je de reden, zodat je het kunt
+herhalen of voor *nee* kunt kiezen. Haal de stroom pas weg als het scherm zwart is.
+
 **Rapporten ophalen:** steek een USB-stick in de TEST-SERVER en kopieer de map, of gebruik `scp` via wifi.
 Elk rapport is een zelfstandige HTML-pagina (`report-<serienummer>-<tijd>.html`) met daarnaast een JSON-bestand.
 
 ## Veiligheid
 
 - Het scherm luistert alleen op `127.0.0.1`. Tijdens de wifi-test opent de TEST-SERVER een hotspot; de startknop en de
-  uitschakelknop zijn daar niet bereikbaar. Verzoeken met een vreemde `Host`-header worden geweigerd.
+  afsluitknop zijn daar niet bereikbaar. Verzoeken met een vreemde `Host`-header worden geweigerd.
 - Rapporten worden alleen onder hun eigen bestandsnaam geserveerd; er is geen manier om andere bestanden te lezen.
 - Tekst die van de TEST-CLIENT komt (namen van usb-apparaten, wifi-netwerken) wordt altijd als tekst getoond, nooit als HTML.
 - De dienst draait als root (wifi-hotspot, bluetooth en GPIO vragen dat). De agent op de TEST-CLIENT draait ook als root en
   heeft een vaste lijst opdrachten met gecontroleerde parameters.
-- De knop **TEST-SERVER uitschakelen** onderaan vraagt bevestiging en werkt niet tijdens een test.
+- De knop **Afsluiten** vraagt wat je wilt afsluiten en of de TEST-CLIENT ook mee moet, en werkt niet tijdens een test. Het verzoek moet van de pagina zelf komen (zie hierboven).
 
 ## Als iets niet werkt
 

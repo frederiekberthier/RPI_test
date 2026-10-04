@@ -435,3 +435,146 @@ def test_a_json_body_that_is_not_an_object_is_a_clean_400(web, monkeypatch, raw)
     monkeypatch.setattr(ui_server.subprocess, "Popen", lambda argv: pytest.fail("mag niet uitschakelen"))
     status, body = request("POST", "/api/shutdown", raw=raw)
     assert status == 400 and json.loads(body)["ok"] is False
+
+
+# ---------------------------------------------------------------- afsluiten: applicatie of Pi, met of zonder TEST-CLIENT
+
+@pytest.fixture
+def exit_web(tmp_path, monkeypatch):
+    """Een server met afsluiten aan; legt vast welke commando's gestart worden en of de TEST-CLIENT is uitgeschakeld."""
+    from rpitest.agent.client import RpcError
+    started, events = [], []
+    client = {"fail": None}
+
+    def client_power_off():
+        events.append("client")
+        if client["fail"]:
+            raise RpcError(client["fail"])
+
+    monkeypatch.setattr(ui_server.subprocess, "Popen", lambda argv: (events.append("server"), started.append(argv)))
+    controller = make_controller(tmp_path)
+    (tmp_path / "reports").mkdir()
+    srv = ui_server.make_server(controller, tmp_path / "reports", "127.0.0.1", 0, allow_shutdown=True,
+                                client_power_off=client_power_off)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    port = srv.server_address[1]
+
+    def post(body):
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=30)
+        conn.request("POST", "/api/shutdown", json.dumps(body), {"Content-Type": "application/json"})
+        response = conn.getresponse()
+        data = json.loads(response.read())
+        conn.close()
+        return response.status, data
+
+    yield post, started, events, client, controller, tmp_path
+    srv.shutdown()
+    srv.server_close()
+
+
+def test_closing_only_the_application_stops_the_browser_and_the_service(exit_web):
+    post, started, events, _, _, tmp_path = exit_web
+    status, data = post({"confirm": True, "mode": "app"})
+    assert status == 200 and data["ok"] and "applicatie wordt gesloten" in data["message"]
+    wait_until(lambda: len(started) == 2)
+    assert started[0][:3] == ["pkill", "-f", "--"] and "rpitest-kiosk" in started[0][-1]  # de kioskbrowser
+    assert started[1] == ["systemctl", "--no-block", "stop", "rpitest-ui.service"]
+    assert ["systemctl", "poweroff"] not in started and "client" not in events
+    assert ui_server.exit_flag_path(tmp_path / "reports").read_text() == "1"  # kiosk.sh herstart de browser dan niet
+
+
+def test_poweroff_with_the_client_shuts_the_client_down_first(exit_web):
+    post, started, events, _, _, _ = exit_web
+    status, data = post({"confirm": True, "mode": "poweroff", "client": True})
+    assert status == 200 and "TEST-CLIENT wordt ook uitgeschakeld" in data["message"]
+    wait_until(lambda: started)
+    assert started == [["systemctl", "poweroff"]] and events == ["client", "server"]
+
+
+def test_poweroff_without_the_client_leaves_the_client_alone(exit_web):
+    post, started, events, _, _, tmp_path = exit_web
+    assert post({"confirm": True, "mode": "poweroff", "client": False})[0] == 200
+    wait_until(lambda: started)
+    assert events == ["server"] and not ui_server.exit_flag_path(tmp_path / "reports").exists()
+
+
+def test_the_default_stays_poweroff_without_the_client(exit_web):
+    post, started, events, _, _, _ = exit_web
+    assert post({"confirm": True})[0] == 200
+    wait_until(lambda: started)
+    assert started == [["systemctl", "poweroff"]] and events == ["server"]
+
+
+@pytest.mark.parametrize("mode", ["app", "poweroff"])
+def test_nothing_is_closed_when_the_client_cannot_be_shut_down(exit_web, mode):
+    post, started, events, client, _, tmp_path = exit_web
+    client["fail"] = "TEST-CLIENT niet bereikbaar: time-out"
+    status, data = post({"confirm": True, "mode": mode, "client": True})
+    assert status == 502 and not data["ok"] and "niet uitgeschakeld" in data["message"] and "niets afgesloten" in data["message"]
+    time.sleep(0.3)
+    assert started == [] and not ui_server.exit_flag_path(tmp_path / "reports").exists()
+
+
+@pytest.mark.parametrize("body", [
+    {"confirm": True, "mode": "reboot"}, {"confirm": True, "mode": 3}, {"confirm": True, "client": "ja"},
+    {"confirm": True, "client": 1}, {"confirm": True, "mode": None},
+])
+def test_an_invalid_exit_request_is_refused_without_side_effects(exit_web, body):
+    post, started, events, _, _, _ = exit_web
+    status, _ = post(body)
+    assert status == 400
+    time.sleep(0.2)
+    assert started == [] and events == []
+
+
+@pytest.mark.parametrize("mode", ["app", "poweroff"])
+def test_no_exit_while_a_test_is_running(exit_web, mode):
+    post, started, events, _, controller, _ = exit_web
+    gate = threading.Event()
+    controller._groups = {"slow": lambda ctx: (gate.wait(30), [CheckResult("slow", Status.PASS, "ok")])[1]}
+    controller.start()
+    wait_until(lambda: controller.state()["phase"] == "running")
+    try:
+        assert post({"confirm": True, "mode": mode, "client": True})[0] == 409
+    finally:
+        gate.set()
+        controller.join(30)
+    assert started == [] and events == []
+
+
+def test_the_client_option_needs_a_way_to_reach_the_client(tmp_path, monkeypatch):
+    monkeypatch.setattr(ui_server.subprocess, "Popen", lambda argv: pytest.fail("mag niets starten"))
+    srv = ui_server.make_server(make_controller(tmp_path), tmp_path, "127.0.0.1", 0, allow_shutdown=True)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+        conn.request("POST", "/api/shutdown", json.dumps({"confirm": True, "client": True}),
+                     {"Content-Type": "application/json"})
+        assert conn.getresponse().status == 400
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_a_failing_command_after_the_response_does_not_crash_the_handler(tmp_path, monkeypatch):
+    def missing(argv):
+        raise FileNotFoundError(argv[0])
+
+    monkeypatch.setattr(ui_server.subprocess, "Popen", missing)  # bv. geen systemctl bij een ontwikkelrun
+    (tmp_path / "reports").mkdir()
+    srv = ui_server.make_server(make_controller(tmp_path), tmp_path / "reports", "127.0.0.1", 0, allow_shutdown=True)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        for mode in ("app", "poweroff"):
+            conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=10)
+            conn.request("POST", "/api/shutdown", json.dumps({"confirm": True, "mode": mode}),
+                         {"Content-Type": "application/json"})
+            assert conn.getresponse().status == 200
+            conn.close()
+    finally:
+        srv.shutdown()
+        srv.server_close()
+
+
+def test_the_exit_flag_lives_next_to_the_reports(tmp_path):
+    assert ui_server.exit_flag_path(tmp_path / "var" / "reports") == tmp_path / "var" / "kiosk-exit"

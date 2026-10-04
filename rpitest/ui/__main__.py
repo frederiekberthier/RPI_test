@@ -11,7 +11,7 @@ from pathlib import Path
 from .. import factory
 from ..__main__ import add_common_arguments, context_factory
 from .controller import Controller
-from .server import DEFAULT_PORT, make_server
+from .server import DEFAULT_PORT, exit_flag_path, make_server
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -28,12 +28,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Fout: {exc}", file=sys.stderr)
         return 2
     probe = factory.mock_probe if args.mock else factory.real_probe(args.client_url)
+    client_power_off = (lambda: None) if args.mock else factory.real_client_power_off(args.client_url)
 
     reports = Path(args.out)
     controller = Controller(make_context, probe, reports)
     controller.refresh_client()
     controller.start_polling()
-    server = make_server(controller, reports, args.host, args.port, args.allow_shutdown)
+    exit_flag_path(reports).unlink(missing_ok=True)  # een eerdere 'applicatie sluiten' geldt niet voor deze start
+    server = make_server(controller, reports, args.host, args.port, args.allow_shutdown, client_power_off)
     print(f"Scherm beschikbaar op http://{args.host}:{args.port}  (rapporten in {reports})")
     try:
         server.serve_forever()
