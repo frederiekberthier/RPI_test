@@ -1,0 +1,18 @@
+G04 Gegenereerd door hardware/gpio-adapter/maak_pcb.py*
+%TF.GenerationSoftware,rpitest,maak_pcb,1*%
+%TF.FileFunction,Profile,NP*%
+%TF.FilePolarity,Positive*%
+%FSLAX46Y46*%
+%MOMM*%
+%ADD10C,0.100000*%
+G01*
+D10*
+X0Y60760000D02*
+X70000000Y60760000D01*
+X70000000Y60760000D02*
+X70000000Y0D01*
+X70000000Y0D02*
+X0Y0D01*
+X0Y0D02*
+X0Y60760000D01*
+M02*
