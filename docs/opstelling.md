@@ -28,6 +28,8 @@
 
 ## Bedrading
 
+*Liever geen 26 weerstandskabels solderen? Er is ook een print met twee headers en de weerstanden erop: zie [pcb.md](pcb.md).*
+
 ![Breadboardschema: twee breakouts met per pin aangegeven welke kabel erin hoort](img/breadboard.svg)
 
 Verbind elke GPIO-pin op breakout A (TEST-SERVER) met **dezelfde** pin op breakout B (TEST-CLIENT), en drie GND-pinnen.

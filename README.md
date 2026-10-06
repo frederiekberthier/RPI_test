@@ -5,7 +5,8 @@ Test library om RPI hardwarematig te testen
 - **TEST-SERVER** (eigen Pi 5, met scherm): stuurt de test aan en maakt het rapport.
 - **TEST-CLIENT** (de te testen Pi 4/5): bootet van een eigen TEST-CLIENT-SD met de agent.
 - Verbonden met: GPIO-adapter (alleen GND + GPIO's, met serieweerstanden, géén 5V/3V3) en een
-  rechtstreekse netwerkkabel met statische IP's.
+  rechtstreekse netwerkkabel met statische IP's. De GPIO-adapter kan op breadboards ([docs/opstelling.md](docs/opstelling.md)) of als
+  print met één koperlaag ([docs/pcb.md](docs/pcb.md)).
 
 ![Overzicht van de opstelling](docs/img/overzicht.svg)
 

@@ -2,3 +2,6 @@
 *.sh text eol=lf
 *.service text eol=lf
 image/kiosk.sh text eol=lf
+# Gegenereerde printbestanden worden byte voor byte met het script vergeleken (tests/test_pcb.py).
+hardware/gpio-adapter/** text eol=lf
+*.zip binary
